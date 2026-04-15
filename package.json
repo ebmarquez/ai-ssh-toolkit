@@ -1,0 +1,59 @@
+{
+  "name": "ai-ssh-toolkit",
+  "version": "0.1.0",
+  "description": "MCP server for AI-driven SSH sessions with pluggable credential backends",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "ai-ssh-toolkit": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/ test/",
+    "lint:fix": "eslint src/ test/ --fix",
+    "clean": "rimraf dist",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "ssh",
+    "ai",
+    "copilot",
+    "claude",
+    "bitwarden",
+    "azure-keyvault",
+    "credential-management",
+    "network-automation"
+  ],
+  "author": "Eric Marquez",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ebmarquez/ai-ssh-toolkit.git"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "dist/",
+    "skills/",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@typescript-eslint/eslint-plugin": "^8.58.2",
+    "@typescript-eslint/parser": "^8.58.2",
+    "eslint": "^10.2.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.4"
+  }
+}

@@ -1,0 +1,9 @@
+src/
+test/
+.github/
+.squad/
+tsconfig.json
+.eslintrc.*
+.gitignore
+coverage/
+.vscode/
