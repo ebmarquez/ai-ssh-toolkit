@@ -95,31 +95,49 @@ export async function sshMultiExecute(
   const maxParallel = input.max_parallel ?? 10;
   const hosts = input.hosts;
 
-  const results: HostResult[] = [];
+  // True concurrency limiter: slots fill as hosts complete, not in fixed batches.
+  // This prevents slow hosts from blocking idle slots.
+  let activeSlots = 0;
+  const results: HostResult[] = new Array(hosts.length);
+  const queue = hosts.map((host, idx) => ({ host, idx }));
+  let queuePos = 0;
 
-  // Process in batches of max_parallel
-  for (let i = 0; i < hosts.length; i += maxParallel) {
-    const batch = hosts.slice(i, i + maxParallel);
-    const settled = await Promise.allSettled(
-      batch.map((host) => executor(host, input, registry)),
-    );
-
-    for (const outcome of settled) {
-      if (outcome.status === "fulfilled") {
-        results.push(outcome.value);
-      } else {
-        // Unexpected — executeSingleHost catches internally, but handle defensively
-        results.push({
-          host: "unknown",
-          success: false,
-          error: outcome.reason instanceof Error
-            ? outcome.reason.message
-            : String(outcome.reason),
-          duration_ms: 0,
-        });
-      }
+  await new Promise<void>((resolveAll) => {
+    if (hosts.length === 0) {
+      resolveAll();
+      return;
     }
-  }
+
+    let completed = 0;
+
+    const runNext = () => {
+      while (activeSlots < maxParallel && queuePos < queue.length) {
+        const { host, idx } = queue[queuePos++];
+        activeSlots++;
+
+        executor(host, input, registry)
+          .catch((err): HostResult => ({
+            // Capture host in closure so rejection fallback has the right name
+            host,
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+            duration_ms: 0,
+          }))
+          .then((result) => {
+            results[idx] = result;
+            activeSlots--;
+            completed++;
+            if (completed === hosts.length) {
+              resolveAll();
+            } else {
+              runNext();
+            }
+          });
+      }
+    };
+
+    runNext();
+  });
 
   const successful = results.filter((r) => r.success).length;
 
@@ -158,7 +176,9 @@ async function runSshCommands(opts: RunSshOptions): Promise<string> {
 
   return new Promise<string>((resolve, reject) => {
     const sshArgs = [
-      "-o", "StrictHostKeyChecking=no",
+      // NOTE: StrictHostKeyChecking is intentionally NOT disabled here.
+      // Hosts must be in the user's ~/.ssh/known_hosts.
+      // For lab/testing: run `ssh-keyscan <host> >> ~/.ssh/known_hosts` first.
       "-o", "BatchMode=no",
       "-o", `ConnectTimeout=${Math.ceil(timeoutMs / 1000)}`,
       "-p", String(port),
