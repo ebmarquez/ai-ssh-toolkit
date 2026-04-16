@@ -17,7 +17,7 @@ import { resolveCliPath } from "../../src/utils/cli-resolver.js";
 function mockExecFile(stdout: string) {
   const mock = vi.mocked(execFile);
   mock.mockImplementation(
-    (_cmd: unknown, _args: unknown, _opts: unknown, callback?: Function) => {
+    (_cmd: unknown, _args: unknown, _opts: unknown, callback?: (err: Error | null, stdout: string, stderr: string) => void) => {
       if (typeof _opts === "function") {
         // callback in 3rd position (no opts)
         _opts(null, stdout, "");
@@ -32,7 +32,7 @@ function mockExecFile(stdout: string) {
 function mockExecFileError(message: string) {
   const mock = vi.mocked(execFile);
   mock.mockImplementation(
-    (_cmd: unknown, _args: unknown, _opts: unknown, callback?: Function) => {
+    (_cmd: unknown, _args: unknown, _opts: unknown, callback?: (err: Error | null, stdout: string, stderr: string) => void) => {
       const err = new Error(message);
       if (typeof _opts === "function") {
         _opts(err, "", "");
