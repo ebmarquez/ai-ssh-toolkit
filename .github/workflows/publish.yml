@@ -53,6 +53,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Add scoped name for GitHub Packages
+        run: |
+          # GitHub Packages requires a scoped name (@owner/package)
+          node -e "
+            const pkg = require('./package.json');
+            pkg.name = '@ebmarquez/ai-ssh-toolkit';
+            require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
       - name: Publish to GitHub Packages
         run: npm publish --access public
         env:
