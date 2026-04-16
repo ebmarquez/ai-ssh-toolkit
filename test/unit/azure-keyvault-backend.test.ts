@@ -17,7 +17,7 @@ function mockExecFileSequence(responses: Array<{ stdout?: string; error?: Error 
   const mock = vi.mocked(execFile);
   let callIndex = 0;
   mock.mockImplementation(
-    (_cmd: unknown, _args: unknown, _opts: unknown, callback?: Function) => {
+    (_cmd: unknown, _args: unknown, _opts: unknown, callback?: (err: Error | null, stdout: string, stderr: string) => void) => {
       const response = responses[callIndex] ?? responses[responses.length - 1];
       callIndex++;
       const cb = typeof _opts === "function" ? _opts : callback;
