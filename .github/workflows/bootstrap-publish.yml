@@ -23,6 +23,7 @@ jobs:
     if: github.event.inputs.confirm == 'publish'
     permissions:
       contents: read
+      id-token: write  # Required for provenance
 
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +50,9 @@ jobs:
           fi
 
       - name: Publish to npm (bootstrap - uses token)
-        run: npm publish --access public
+        run: npm publish --access public --ignore-scripts=false
+        env:
+          NPM_CONFIG_PROVENANCE: "false"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
