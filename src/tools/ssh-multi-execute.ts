@@ -227,7 +227,13 @@ async function runSshCommands(opts: RunSshOptions): Promise<string> {
       "TERM",
       "LANG",
       "LC_ALL",
+      // SSH config / agent vars
+      "SSH_AUTH_SOCK",
+      "SSH_AGENT_PID",
       // Windows/platform-critical vars
+      "USERPROFILE",
+      "HOMEDRIVE",
+      "HOMEPATH",
       "SystemRoot",
       "WINDIR",
       "ComSpec",

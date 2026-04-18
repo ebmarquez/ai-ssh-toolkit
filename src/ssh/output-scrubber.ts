@@ -11,9 +11,9 @@ export function scrubOutput(raw: string): string {
   let scrubbed = raw;
 
   // Remove credential prompt lines (anchored to prompt-like line starts to avoid
-  // stripping normal command output that happens to contain words like "token:".)
+  // stripping normal command output that happens to contain words like "Token Ring:".)
   scrubbed = scrubbed.replace(
-    /^\s*(?:enter\s+)?(?:password|secret|passphrase|pass phrase|pin|authentication\s+token)\s*:\s*.*(?:\r?\n|$)/gim,
+    /^\s*(?:enter\s+)?(?:password|secret|passphrase|pass phrase|pin|token|authentication\s+token)\s*:\s*.*(?:\r?\n|$)/gim,
     "",
   );
 

@@ -10,11 +10,12 @@ describe("scrubOutput", () => {
   });
 
   it("removes secret/passphrase/token style prompt lines", () => {
-    const input = "Secret: topsecret\nEnter passphrase: abc123\nAuthentication token: 999999\nswitch01# show run";
+    const input = "Secret: topsecret\nEnter passphrase: abc123\nAuthentication token: 999999\nToken: 123456\nswitch01# show run";
     const result = scrubOutput(input);
     expect(result).not.toContain("Secret:");
     expect(result).not.toContain("passphrase");
     expect(result).not.toContain("Authentication token:");
+    expect(result).not.toContain("Token: 123456");
     expect(result).toContain("show run");
   });
 
