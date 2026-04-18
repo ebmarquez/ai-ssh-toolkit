@@ -11,6 +11,7 @@
  *  - ssh_check_host            (SSH connectivity probe)
  *  - credential_get            (credential metadata, never returns passwords)
  *  - credential_list_backends  (list registered credential backends)
+ *  - version_check             (installed vs latest published package version)
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -22,6 +23,7 @@ import { sshMultiExecute } from './tools/ssh-multi-execute.js';
 import { credentialGet } from './tools/credential-get.js';
 import { credentialListBackends } from './tools/credential-list.js';
 import { sshCheckHost } from './tools/ssh-check.js';
+import { versionCheck } from './tools/version-check.js';
 import { CredentialRegistry } from './credentials/registry.js';
 import { GoogleSecretManagerBackend } from './credentials/google-secret-manager.js';
 
@@ -145,6 +147,24 @@ server.tool(
   async (input) => {
     try {
       const result = await sshCheckHost(input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── version_check ────────────────────────────────────────────────────────────
+server.tool(
+  'version_check',
+  'Check installed ai-ssh-toolkit version against latest published npm version.',
+  {},
+  async () => {
+    try {
+      const result = await versionCheck();
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
