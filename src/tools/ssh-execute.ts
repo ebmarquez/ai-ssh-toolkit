@@ -5,8 +5,7 @@
  * This handler returns a clear not-implemented error rather than silently failing.
  */
 
-import { detectPrompt, detectPasswordPrompt, type PlatformHint } from '../ssh/prompt-detector.js';
-import { scrubOutput } from '../ssh/output-scrubber.js';
+import type { PlatformHint } from '../ssh/prompt-detector.js';
 import type { CredentialRegistry } from '../credentials/registry.js';
 
 const VALID_REF = /^[a-zA-Z0-9/_\-.@:]+$/;
@@ -67,13 +66,8 @@ export async function sshExecute(
   if (!host) throw new Error('host is required');
   if (!command) throw new Error('command is required');
 
-  // PTY session manager is not yet implemented — expose helpers used so far
-  void detectPrompt;
-  void detectPasswordPrompt;
-  void scrubOutput;
-  void resolvedUsername;
-  void platform;
-  void timeout_ms;
+  // TODO(pty): wire detectPrompt, detectPasswordPrompt, scrubOutput, resolvedUsername,
+  // platform, and timeout_ms when PtyManager (src/ssh/pty-manager.ts) is implemented.
 
   throw new Error(
     'ssh_execute: PTY session manager (src/ssh/pty-manager.ts) is not yet implemented. ' +
