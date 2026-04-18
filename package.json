@@ -16,7 +16,8 @@
     "lint": "eslint src/ test/",
     "lint:fix": "eslint src/ test/ --fix",
     "clean": "rimraf dist",
-    "prepublishOnly": "npm run build"
+    "test:smoke": "vitest run test/smoke",
+    "prepublishOnly": "npm run build && npm run test:smoke"
   },
   "keywords": [
     "mcp",

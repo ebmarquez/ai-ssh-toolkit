@@ -29,3 +29,10 @@ export function resolveCliPath(toolName: string): string {
 
   return resolved;
 }
+
+/**
+ * Resolve the absolute path to the `ssh` binary.
+ */
+export async function resolveSshBin(): Promise<string> {
+  return resolveCliPath('ssh');
+}
