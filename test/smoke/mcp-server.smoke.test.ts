@@ -8,8 +8,9 @@
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'child_process';
 import { resolve } from 'path';
+import { fileURLToPath } from 'url';
 
-const DIST_INDEX = resolve(new URL('.', import.meta.url).pathname, '../../dist/index.js');
+const DIST_INDEX = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../dist/index.js');
 
 const EXPECTED_TOOLS = ['ssh_execute', 'credential_get', 'credential_list_backends', 'ssh_check_host'];
 
