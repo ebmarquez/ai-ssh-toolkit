@@ -220,20 +220,33 @@ async function runSshCommands(opts: RunSshOptions): Promise<string> {
       `${username}@${host}`,
     ];
 
+    const childEnv: Record<string, string> = {};
+    const allowlist = [
+      "HOME",
+      "PATH",
+      "TERM",
+      "LANG",
+      "LC_ALL",
+      // Windows/platform-critical vars
+      "SystemRoot",
+      "WINDIR",
+      "ComSpec",
+      "PATHEXT",
+      "TEMP",
+      "TMP",
+    ];
+    for (const key of allowlist) {
+      const value = process.env[key];
+      if (value) childEnv[key] = value;
+    }
+    childEnv.TERM ??= "xterm-color";
+
     const proc = pty.spawn("ssh", sshArgs, {
       name: "xterm-color",
       cols: 220,
       rows: 40,
-      // Pass minimal env — never expose full process.env to SSH children.
-      // Full env inheritance risks leaking Vault tokens, cloud credentials,
-      // SSH_AUTH_SOCK, etc. to SSH servers with AcceptEnv *.
-      env: {
-        HOME: process.env.HOME ?? "",
-        PATH: process.env.PATH ?? "/usr/bin:/bin",
-        TERM: "xterm-color",
-        LANG: process.env.LANG ?? "en_US.UTF-8",
-        LC_ALL: process.env.LC_ALL ?? "",
-      },
+      // Pass filtered env only — never expose full process.env to SSH children.
+      env: childEnv,
     });
 
     let outputBuf = "";
@@ -251,9 +264,10 @@ async function runSshCommands(opts: RunSshOptions): Promise<string> {
 
       if (!authenticated && detectPasswordPrompt(outputBuf)) {
         if (password) {
-          // Write password bytes directly — never materialize as a JS string
-          // (strings are immutable on V8 heap and cannot be zeroed)
-          proc.write(Buffer.from(password).toString('binary') + "\r");
+          // node-pty write() is string-based, so preserve the intended UTF-8
+          // characters for non-ASCII passwords. The Buffer is still zeroed in
+          // the caller's finally block after session completion.
+          proc.write(password.toString("utf-8") + "\r");
           authenticated = true;
           outputBuf = "";
         } else {

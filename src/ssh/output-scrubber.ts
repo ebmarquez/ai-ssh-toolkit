@@ -10,8 +10,12 @@
 export function scrubOutput(raw: string): string {
   let scrubbed = raw;
 
-  // Remove credential prompt lines (case-insensitive, multiple variants)
-  scrubbed = scrubbed.replace(/(?:password|secret|passphrase|pass phrase|pin|token|auth(?:entication)?(?:\s+token)?)[^:]*:\s*.*\r?\n?/gi, "");
+  // Remove credential prompt lines (anchored to prompt-like line starts to avoid
+  // stripping normal command output that happens to contain words like "token:".)
+  scrubbed = scrubbed.replace(
+    /^\s*(?:enter\s+)?(?:password|secret|passphrase|pass phrase|pin|authentication\s+token)\s*:\s*.*(?:\r?\n|$)/gim,
+    "",
+  );
 
   // Remove ANSI escape sequences (CSI sequences: ESC [ ... final-byte)
   // eslint-disable-next-line no-control-regex
@@ -23,7 +27,7 @@ export function scrubOutput(raw: string): string {
 
   // Remove DCS sequences (ESC P ... ST)
   // eslint-disable-next-line no-control-regex
-  scrubbed = scrubbed.replace(/\x1BP[^\x1B]*\x1B\\/g, "");
+  scrubbed = scrubbed.replace(/\x1BP[\s\S]*?\x1B\\/g, "");
 
   return scrubbed;
 }
