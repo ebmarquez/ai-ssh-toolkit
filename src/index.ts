@@ -2,8 +2,15 @@
 /**
  * ai-ssh-toolkit MCP server entry point.
  *
- * Creates an McpServer with StdioServerTransport, registers all 4 tools,
+ * Creates an McpServer with StdioServerTransport, registers all 5 tools,
  * and connects to the MCP client via stdin/stdout.
+ *
+ * Tools:
+ *  - ssh_execute               (single-host SSH — PTY stub, wired for credentials)
+ *  - ssh_multi_execute         (parallel multi-host SSH execution)
+ *  - ssh_check_host            (SSH connectivity probe)
+ *  - credential_get            (credential metadata, never returns passwords)
+ *  - credential_list_backends  (list registered credential backends)
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -11,6 +18,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import * as z from 'zod/v3';
 
 import { sshExecute } from './tools/ssh-execute.js';
+import { sshMultiExecute } from './tools/ssh-multi-execute.js';
 import { credentialGet } from './tools/credential-get.js';
 import { credentialListBackends } from './tools/credential-list.js';
 import { sshCheckHost } from './tools/ssh-check.js';
@@ -22,8 +30,8 @@ const server = new McpServer(
   { capabilities: { tools: {} } }
 );
 
-const credentialRegistry = new CredentialRegistry();
-credentialRegistry.register(new GoogleSecretManagerBackend());
+const registry = new CredentialRegistry();
+registry.register(new GoogleSecretManagerBackend());
 
 // ── ssh_execute ──────────────────────────────────────────────────────────────
 server.tool(
@@ -43,15 +51,39 @@ server.tool(
   },
   async (input) => {
     try {
-      const result = await sshExecute(credentialRegistry, input);
+      const result = await sshExecute(registry, input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
       return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(result),
-          },
-        ],
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
       };
+    }
+  }
+);
+
+// ── ssh_multi_execute ────────────────────────────────────────────────────────
+server.tool(
+  'ssh_multi_execute',
+  'Execute SSH commands across multiple hosts in parallel.',
+  {
+    hosts: z.array(z.string()).describe('List of hostnames or IP addresses'),
+    username: z.string().describe('SSH username for all hosts'),
+    commands: z.array(z.string()).describe('Commands to execute on each host'),
+    credential_backend: z.string().optional().describe('Credential backend name'),
+    credential_ref: z.string().optional().describe('Credential reference string'),
+    platform_hint: z
+      .enum(['nxos', 'os10', 'sonic', 'linux', 'auto'])
+      .optional()
+      .describe('Platform hint for prompt detection'),
+    port: z.number().int().min(1).max(65535).optional().describe('SSH port (default: 22)'),
+    max_parallel: z.number().int().positive().optional().describe('Max simultaneous connections (default: 10)'),
+    timeout_per_host: z.number().int().positive().optional().describe('Per-host timeout in seconds (default: 30)'),
+  },
+  async (input) => {
+    try {
+      const result = await sshMultiExecute(input, registry);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
     } catch (err: unknown) {
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
@@ -71,10 +103,8 @@ server.tool(
   },
   async (input) => {
     try {
-      const metadata = await credentialGet(credentialRegistry, input);
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(metadata) }],
-      };
+      const metadata = await credentialGet(registry, input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(metadata) }] };
     } catch (err: unknown) {
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
@@ -91,10 +121,8 @@ server.tool(
   {},
   async () => {
     try {
-      const backends = await credentialListBackends(credentialRegistry);
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(backends) }],
-      };
+      const backends = await credentialListBackends(registry);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(backends) }] };
     } catch (err: unknown) {
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
@@ -110,16 +138,14 @@ server.tool(
   'Verify SSH connectivity to a host without executing commands.',
   {
     host: z.string().describe('Hostname or IP address to check'),
-    port: z.number().int().positive().optional().describe('SSH port (default: 22)'),
+    port: z.number().int().min(1).max(65535).optional().describe('SSH port (default: 22)'),
     username: z.string().optional().describe('SSH username for the connectivity check'),
     timeout_ms: z.number().int().positive().optional().describe('Connection timeout in milliseconds (default: 5000)'),
   },
   async (input) => {
     try {
       const result = await sshCheckHost(input);
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-      };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
