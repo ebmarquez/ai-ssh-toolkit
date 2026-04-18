@@ -35,11 +35,11 @@ export async function sshExecute(
     username,
     credential_ref,
     credential_backend,
-    platform = 'auto',
-    timeout_ms = 30000,
   } = input;
 
   // Resolve credentials if a ref is provided
+  // TODO(pty): input.platform, input.timeout_ms, and resolvedUsername will be
+  // wired into PtyManager when src/ssh/pty-manager.ts is implemented.
   let resolvedUsername = username ?? '';
   if (credential_ref) {
     if (!VALID_REF.test(credential_ref)) {
@@ -67,7 +67,8 @@ export async function sshExecute(
   if (!command) throw new Error('command is required');
 
   // TODO(pty): wire detectPrompt, detectPasswordPrompt, scrubOutput, resolvedUsername,
-  // platform, and timeout_ms when PtyManager (src/ssh/pty-manager.ts) is implemented.
+  // platform, input.timeout_ms when PtyManager (src/ssh/pty-manager.ts) is implemented.
+  void resolvedUsername;
 
   throw new Error(
     'ssh_execute: PTY session manager (src/ssh/pty-manager.ts) is not yet implemented. ' +
