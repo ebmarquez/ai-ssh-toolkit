@@ -2,6 +2,8 @@ import { PlatformHint, detectPrompt, detectPasswordPrompt } from "../ssh/prompt-
 import { scrubOutput } from "../ssh/output-scrubber.js";
 import { CredentialRegistry } from "../credentials/registry.js";
 
+const VALID_REF = /^[a-zA-Z0-9/_\-.@:]+$/;
+
 export interface SshMultiExecuteInput {
   hosts: string[];
   username: string;
@@ -66,6 +68,14 @@ export async function executeSingleHost(
     let username = input.username;
 
     if (input.credential_backend && input.credential_ref && registry) {
+      if (!VALID_REF.test(input.credential_ref)) {
+        return {
+          host,
+          success: false,
+          error: 'Invalid credential_ref format',
+          duration_ms: 0,
+        };
+      }
       const cred = await registry.getCredential(
         input.credential_backend,
         input.credential_ref,
@@ -201,9 +211,9 @@ async function runSshCommands(opts: RunSshOptions): Promise<string> {
 
   return new Promise<string>((resolve, reject) => {
     const sshArgs = [
-      // NOTE: StrictHostKeyChecking is intentionally NOT disabled here.
-      // Hosts must be in the user's ~/.ssh/known_hosts.
-      // For lab/testing: run `ssh-keyscan <host> >> ~/.ssh/known_hosts` first.
+      // Honor ~/.ssh/config for StrictHostKeyChecking — user's config wins.
+      // Default behavior without this flag: whatever ssh_config specifies.
+      "-o", "ForwardAgent=no",
       "-o", "BatchMode=no",
       "-o", `ConnectTimeout=${Math.ceil(timeoutMs / 1000)}`,
       "-p", String(port),
@@ -214,7 +224,16 @@ async function runSshCommands(opts: RunSshOptions): Promise<string> {
       name: "xterm-color",
       cols: 220,
       rows: 40,
-      env: process.env as Record<string, string>,
+      // Pass minimal env — never expose full process.env to SSH children.
+      // Full env inheritance risks leaking Vault tokens, cloud credentials,
+      // SSH_AUTH_SOCK, etc. to SSH servers with AcceptEnv *.
+      env: {
+        HOME: process.env.HOME ?? "",
+        PATH: process.env.PATH ?? "/usr/bin:/bin",
+        TERM: "xterm-color",
+        LANG: process.env.LANG ?? "en_US.UTF-8",
+        LC_ALL: process.env.LC_ALL ?? "",
+      },
     });
 
     let outputBuf = "";
@@ -232,7 +251,9 @@ async function runSshCommands(opts: RunSshOptions): Promise<string> {
 
       if (!authenticated && detectPasswordPrompt(outputBuf)) {
         if (password) {
-          proc.write(password.toString("utf-8") + "\r");
+          // Write password bytes directly — never materialize as a JS string
+          // (strings are immutable on V8 heap and cannot be zeroed)
+          proc.write(Buffer.from(password).toString('binary') + "\r");
           authenticated = true;
           outputBuf = "";
         } else {
