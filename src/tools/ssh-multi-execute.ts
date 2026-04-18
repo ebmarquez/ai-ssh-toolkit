@@ -2,6 +2,8 @@ import { PlatformHint, detectPrompt, detectPasswordPrompt } from "../ssh/prompt-
 import { scrubOutput } from "../ssh/output-scrubber.js";
 import { CredentialRegistry } from "../credentials/registry.js";
 
+const VALID_REF = /^[a-zA-Z0-9/_\-.@:]+$/;
+
 export interface SshMultiExecuteInput {
   hosts: string[];
   username: string;
@@ -66,6 +68,14 @@ export async function executeSingleHost(
     let username = input.username;
 
     if (input.credential_backend && input.credential_ref && registry) {
+      if (!VALID_REF.test(input.credential_ref)) {
+        return {
+          host,
+          success: false,
+          error: 'Invalid credential_ref format',
+          duration_ms: 0,
+        };
+      }
       const cred = await registry.getCredential(
         input.credential_backend,
         input.credential_ref,
@@ -201,20 +211,48 @@ async function runSshCommands(opts: RunSshOptions): Promise<string> {
 
   return new Promise<string>((resolve, reject) => {
     const sshArgs = [
-      // NOTE: StrictHostKeyChecking is intentionally NOT disabled here.
-      // Hosts must be in the user's ~/.ssh/known_hosts.
-      // For lab/testing: run `ssh-keyscan <host> >> ~/.ssh/known_hosts` first.
+      // Honor ~/.ssh/config for StrictHostKeyChecking — user's config wins.
+      // Default behavior without this flag: whatever ssh_config specifies.
+      "-o", "ForwardAgent=no",
       "-o", "BatchMode=no",
       "-o", `ConnectTimeout=${Math.ceil(timeoutMs / 1000)}`,
       "-p", String(port),
       `${username}@${host}`,
     ];
 
+    const childEnv: Record<string, string> = {};
+    const allowlist = [
+      "HOME",
+      "PATH",
+      "TERM",
+      "LANG",
+      "LC_ALL",
+      // SSH config / agent vars
+      "SSH_AUTH_SOCK",
+      "SSH_AGENT_PID",
+      // Windows/platform-critical vars
+      "USERPROFILE",
+      "HOMEDRIVE",
+      "HOMEPATH",
+      "SystemRoot",
+      "WINDIR",
+      "ComSpec",
+      "PATHEXT",
+      "TEMP",
+      "TMP",
+    ];
+    for (const key of allowlist) {
+      const value = process.env[key];
+      if (value) childEnv[key] = value;
+    }
+    childEnv.TERM ??= "xterm-color";
+
     const proc = pty.spawn("ssh", sshArgs, {
       name: "xterm-color",
       cols: 220,
       rows: 40,
-      env: process.env as Record<string, string>,
+      // Pass filtered env only — never expose full process.env to SSH children.
+      env: childEnv,
     });
 
     let outputBuf = "";
@@ -232,6 +270,9 @@ async function runSshCommands(opts: RunSshOptions): Promise<string> {
 
       if (!authenticated && detectPasswordPrompt(outputBuf)) {
         if (password) {
+          // node-pty write() is string-based, so preserve the intended UTF-8
+          // characters for non-ASCII passwords. The Buffer is still zeroed in
+          // the caller's finally block after session completion.
           proc.write(password.toString("utf-8") + "\r");
           authenticated = true;
           outputBuf = "";
