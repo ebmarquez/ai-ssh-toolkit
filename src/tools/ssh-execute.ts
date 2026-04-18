@@ -9,6 +9,8 @@ import { detectPrompt, detectPasswordPrompt, type PlatformHint } from '../ssh/pr
 import { scrubOutput } from '../ssh/output-scrubber.js';
 import type { CredentialRegistry } from '../credentials/registry.js';
 
+const VALID_REF = /^[a-zA-Z0-9/_\-.@:]+$/;
+
 export interface SshExecuteInput {
   host: string;
   command: string;
@@ -41,11 +43,15 @@ export async function sshExecute(
   // Resolve credentials if a ref is provided
   let resolvedUsername = username ?? '';
   if (credential_ref) {
+    if (!VALID_REF.test(credential_ref)) {
+      throw new Error('Invalid credential_ref format');
+    }
     const backendName = credential_backend ?? 'google-secret-manager';
     const backend = registry.getBackend(backendName);
     const available = await backend.isAvailable();
     if (!available) {
-      throw new Error(`Credential backend "${backendName}" is not available in this environment`);
+      process.stderr.write(`Credential backend "${backendName}" unavailable in ssh_execute\n`);
+      throw new Error(`Credential backend "${backendName}" failed. Check server logs for details.`);
     }
     const cred = await backend.getCredential(credential_ref);
     resolvedUsername = cred.username || resolvedUsername;

@@ -12,19 +12,23 @@ export interface CredentialGetInput {
   backend?: string;
 }
 
+const VALID_REF = /^[a-zA-Z0-9/_\-.@:]+$/;
+
 export async function credentialGet(
   registry: CredentialRegistry,
   input: CredentialGetInput
 ): Promise<CredentialMetadata> {
   const { ref, backend: backendName = 'google-secret-manager' } = input;
 
+  if (!VALID_REF.test(ref)) {
+    throw new Error('Invalid credential_ref format');
+  }
+
   const backend = registry.getBackend(backendName);
   const available = await backend.isAvailable();
   if (!available) {
-    throw new Error(
-      `Credential backend "${backendName}" is not available in this environment. ` +
-      'Ensure the required CLI tools and authentication are configured.'
-    );
+    process.stderr.write(`Credential backend "${backendName}" unavailable: not available in this environment\n`);
+    throw new Error(`Credential backend "${backendName}" failed. Check server logs for details.`);
   }
 
   return registry.getMetadata(backendName, ref);
