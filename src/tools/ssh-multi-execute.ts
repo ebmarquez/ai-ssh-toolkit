@@ -1,4 +1,5 @@
 import { PlatformHint, detectPrompt, detectPasswordPrompt } from "../ssh/prompt-detector.js";
+import { scrubOutput } from "../ssh/output-scrubber.js";
 import { CredentialRegistry } from "../credentials/registry.js";
 
 export interface SshMultiExecuteInput {
@@ -38,11 +39,30 @@ export async function executeSingleHost(
   input: SshMultiExecuteInput,
   registry?: CredentialRegistry,
 ): Promise<HostResult> {
+  // Validate credential params upfront
+  if ((input.credential_backend && !input.credential_ref) ||
+      (!input.credential_backend && input.credential_ref)) {
+    return {
+      host,
+      success: false,
+      error: 'credential_backend and credential_ref must both be provided together',
+      duration_ms: 0,
+    };
+  }
+  if (input.credential_backend && !registry) {
+    return {
+      host,
+      success: false,
+      error: 'credential_backend requested but no registry available',
+      duration_ms: 0,
+    };
+  }
+
   const start = Date.now();
 
+  let password: Buffer | undefined;
   try {
     // Resolve credentials if a backend is configured
-    let password: Buffer | undefined;
     let username = input.username;
 
     if (input.credential_backend && input.credential_ref && registry) {
@@ -54,7 +74,7 @@ export async function executeSingleHost(
       password = cred.password;
     }
 
-    const output = await runSshCommands({
+    const rawOutput = await runSshCommands({
       host,
       port: input.port ?? 22,
       username,
@@ -64,8 +84,7 @@ export async function executeSingleHost(
       timeoutMs: (input.timeout_per_host ?? 30) * 1000,
     });
 
-    // Zero-fill password buffer after use
-    if (password) password.fill(0);
+    const output = scrubOutput(rawOutput);
 
     return {
       host,
@@ -80,6 +99,9 @@ export async function executeSingleHost(
       error: err instanceof Error ? err.message : String(err),
       duration_ms: Date.now() - start,
     };
+  } finally {
+    // Always zero-fill password buffer — success or failure
+    if (password) password.fill(0);
   }
 }
 
@@ -92,7 +114,10 @@ export async function sshMultiExecute(
   executor: typeof executeSingleHost = executeSingleHost,
 ): Promise<SshMultiExecuteOutput> {
   const wallStart = Date.now();
-  const maxParallel = input.max_parallel ?? 10;
+  const maxParallel = Math.max(1, Math.floor(input.max_parallel ?? 10));
+  if (!Number.isFinite(maxParallel)) {
+    throw new Error('max_parallel must be a finite positive integer');
+  }
   const hosts = input.hosts;
 
   // True concurrency limiter: slots fill as hosts complete, not in fixed batches.
@@ -253,7 +278,7 @@ export const SSH_MULTI_EXECUTE_TOOL = {
         type: "array",
         items: { type: "string" },
         description: "List of hostnames or IP addresses",
-        minItems: 1,
+        minItems: 0,
       },
       username: {
         type: "string",
