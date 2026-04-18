@@ -1,4 +1,10 @@
-// TODO: Implement credential_list_backends MCP tool handler
-// See: docs/plans/2026-04-14-ai-ssh-toolkit-design.md
+/**
+ * credential_list_backends tool handler — lists all registered credential backends
+ * and their availability in the current environment.
+ */
 
-export {};
+import type { BackendStatus, CredentialRegistry } from '../credentials/registry.js';
+
+export async function credentialListBackends(registry: CredentialRegistry): Promise<BackendStatus[]> {
+  return registry.discoverAvailability();
+}

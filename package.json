@@ -16,7 +16,8 @@
     "lint": "eslint src/ test/",
     "lint:fix": "eslint src/ test/ --fix",
     "clean": "rimraf dist",
-    "prepublishOnly": "npm run build"
+    "test:smoke": "vitest run test/smoke",
+    "prepublishOnly": "npm run build && npm run test:smoke"
   },
   "keywords": [
     "mcp",
@@ -46,7 +47,8 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "node-pty": "^1.1.0"
+    "node-pty": "^1.1.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -1,4 +1,4 @@
-import { CredentialBackend, CredentialResult, CredentialMetadata } from "./backend.js";
+import type { CredentialBackend, CredentialMetadata, CredentialResult } from './backend.js';
 
 export interface BackendStatus {
   name: string;
