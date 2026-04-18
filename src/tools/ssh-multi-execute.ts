@@ -223,7 +223,7 @@ async function runSshCommands(opts: RunSshOptions): Promise<string> {
     const allCommands = [...commands, "exit"];
 
     const timer = setTimeout(() => {
-      reject(new Error(`Timeout after ${timeoutMs}ms connecting to ${host}`));
+      reject(new Error(`Timeout after ${timeoutMs}ms during SSH session execution on ${host}`));
       proc.kill();
     }, timeoutMs);
 
