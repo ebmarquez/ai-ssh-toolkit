@@ -1,6 +1,6 @@
 /**
  * Smoke test: verify the MCP server starts, responds to initialize,
- * and registers all 4 expected tools.
+ * and registers all expected tools.
  *
  * Sends JSON-RPC messages via stdin/stdout (no transport library needed).
  */
@@ -55,7 +55,7 @@ describe('MCP server smoke test', () => {
     expect(initResponse.result.capabilities.tools).toBeDefined();
   });
 
-  it('tools/list returns all 4 expected tools', () => {
+  it('tools/list returns all expected tools', () => {
     const responses = sendMessages([
       {
         jsonrpc: '2.0',

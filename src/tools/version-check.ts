@@ -1,6 +1,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { readFile } from 'fs/promises';
+import semver from 'semver';
 
 const execFileAsync = promisify(execFile);
 const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -44,6 +45,13 @@ async function fetchLatestPublishedVersion(): Promise<string> {
 }
 
 function compareVersions(current: string, latest: string): { up_to_date: boolean; update_available: boolean } {
+  if (semver.valid(current) && semver.valid(latest)) {
+    return {
+      up_to_date: semver.eq(current, latest),
+      update_available: semver.gt(latest, current),
+    };
+  }
+
   return {
     up_to_date: current === latest,
     update_available: current !== latest,
@@ -58,13 +66,19 @@ export function clearVersionCheckCache(): void {
 export async function versionCheck(
   fetchLatest: () => Promise<string> = fetchLatestPublishedVersion,
   nowMs: number = Date.now(),
+  currentVersionProvider: () => Promise<string> = getCurrentVersion,
 ): Promise<VersionCheckResult> {
-  const current = await getCurrentVersion();
+  const current = await currentVersionProvider();
   const checked_at = new Date(nowMs).toISOString();
 
   if (cachedResult && nowMs - cachedAt < CACHE_TTL_MS) {
+    const comparison = cachedResult.latest ? compareVersions(current, cachedResult.latest) : {
+      up_to_date: cachedResult.up_to_date,
+      update_available: cachedResult.update_available,
+    };
     return {
       ...cachedResult,
+      ...comparison,
       current,
       checked_at,
       source: 'cache',
