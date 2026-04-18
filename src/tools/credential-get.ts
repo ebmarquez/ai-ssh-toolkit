@@ -25,11 +25,15 @@ export async function credentialGet(
   }
 
   const backend = registry.getBackend(backendName);
-  const available = await backend.isAvailable();
-  if (!available) {
-    process.stderr.write(`Credential backend "${backendName}" unavailable: not available in this environment\n`);
-    throw new Error(`Credential backend "${backendName}" failed. Check server logs for details.`);
-  }
 
-  return registry.getMetadata(backendName, ref);
+  try {
+    const available = await backend.isAvailable();
+    if (!available) {
+      process.stderr.write(`Credential backend "${backendName}" unavailable: not available in this environment\n`);
+      throw new Error(`Credential backend "${backendName}" failed. Check server logs for details.`);
+    }
+    return await registry.getMetadata(backendName, ref);
+  } finally {
+    await backend.cleanup();
+  }
 }

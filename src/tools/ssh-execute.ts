@@ -48,16 +48,19 @@ export async function sshExecute(
     }
     const backendName = credential_backend ?? 'google-secret-manager';
     const backend = registry.getBackend(backendName);
-    const available = await backend.isAvailable();
-    if (!available) {
-      process.stderr.write(`Credential backend "${backendName}" unavailable in ssh_execute\n`);
-      throw new Error(`Credential backend "${backendName}" failed. Check server logs for details.`);
+    try {
+      const available = await backend.isAvailable();
+      if (!available) {
+        process.stderr.write(`Credential backend "${backendName}" unavailable in ssh_execute\n`);
+        throw new Error(`Credential backend "${backendName}" failed. Check server logs for details.`);
+      }
+      const cred = await backend.getCredential(credential_ref);
+      resolvedUsername = cred.username || resolvedUsername;
+      // Zero-fill password buffer after capturing — not used until PTY is wired
+      cred.password.fill(0);
+    } finally {
+      await backend.cleanup();
     }
-    const cred = await backend.getCredential(credential_ref);
-    resolvedUsername = cred.username || resolvedUsername;
-    // Zero-fill password buffer after capturing — not used until PTY is wired
-    cred.password.fill(0);
-    await backend.cleanup();
   }
 
   // Validate inputs before attempting connection

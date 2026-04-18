@@ -48,7 +48,9 @@ export async function sshCheckHost(input: SshCheckInput): Promise<SshCheckResult
     // Exit code 255 = ssh-level connection failure (host unreachable, refused, etc.)
     // Exit code 0 = connected and exited cleanly
     // Exit code 1 = connected but "exit" command returned non-zero (still means reachable)
-    const code = (err as NodeJS.ErrnoException & { code?: number; status?: number })?.status;
+    // execFile exposes child exit code on err.code (number); err.status is a fallback
+    const error = err as NodeJS.ErrnoException & { code?: number | string; status?: number };
+    const code = typeof error.code === 'number' ? error.code : error.status;
     if (code === 1) {
       // Connected — the remote shell returned non-zero, but host is reachable
       return { reachable: true, latency_ms: Date.now() - start };
