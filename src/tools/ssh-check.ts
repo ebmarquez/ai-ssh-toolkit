@@ -33,7 +33,7 @@ export async function sshCheckHost(input: SshCheckInput): Promise<SshCheckResult
     '-q',
     '-o', 'BatchMode=yes',
     '-o', `ConnectTimeout=${timeoutSec}`,
-    '-o', 'StrictHostKeyChecking=no',
+    '-o', 'StrictHostKeyChecking=accept-new',
     '-p', String(port),
     target,
     'exit',
