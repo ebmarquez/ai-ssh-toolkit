@@ -3,13 +3,13 @@
  * and their availability in the current environment.
  */
 
-import { listBackends } from '../credentials/registry.js';
+import type { CredentialRegistry } from '../credentials/registry.js';
 
 export interface BackendStatus {
   name: string;
   available: boolean;
 }
 
-export async function credentialListBackends(): Promise<BackendStatus[]> {
-  return listBackends();
+export async function credentialListBackends(registry: CredentialRegistry): Promise<BackendStatus[]> {
+  return registry.discoverAvailability();
 }

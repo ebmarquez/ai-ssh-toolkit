@@ -7,7 +7,7 @@
 
 import { detectPrompt, detectPasswordPrompt, type PlatformHint } from '../ssh/prompt-detector.js';
 import { scrubOutput } from '../ssh/output-scrubber.js';
-import { getBackend } from '../credentials/registry.js';
+import type { CredentialRegistry } from '../credentials/registry.js';
 
 export interface SshExecuteInput {
   host: string;
@@ -24,7 +24,10 @@ export interface SshExecuteResult {
   exit_code: number | null;
 }
 
-export async function sshExecute(input: SshExecuteInput): Promise<SshExecuteResult> {
+export async function sshExecute(
+  registry: CredentialRegistry,
+  input: SshExecuteInput
+): Promise<SshExecuteResult> {
   const {
     host,
     command,
@@ -39,10 +42,7 @@ export async function sshExecute(input: SshExecuteInput): Promise<SshExecuteResu
   let resolvedUsername = username ?? '';
   if (credential_ref) {
     const backendName = credential_backend ?? 'google-secret-manager';
-    const backend = getBackend(backendName);
-    if (!backend) {
-      throw new Error(`Unknown credential backend: "${backendName}"`);
-    }
+    const backend = registry.getBackend(backendName);
     const available = await backend.isAvailable();
     if (!available) {
       throw new Error(`Credential backend "${backendName}" is not available in this environment`);

@@ -14,11 +14,16 @@ import { sshExecute } from './tools/ssh-execute.js';
 import { credentialGet } from './tools/credential-get.js';
 import { credentialListBackends } from './tools/credential-list.js';
 import { sshCheckHost } from './tools/ssh-check.js';
+import { CredentialRegistry } from './credentials/registry.js';
+import { GoogleSecretManagerBackend } from './credentials/google-secret-manager.js';
 
 const server = new McpServer(
   { name: 'ai-ssh-toolkit', version: '0.1.0' },
   { capabilities: { tools: {} } }
 );
+
+const credentialRegistry = new CredentialRegistry();
+credentialRegistry.register(new GoogleSecretManagerBackend());
 
 // ── ssh_execute ──────────────────────────────────────────────────────────────
 server.tool(
@@ -38,7 +43,7 @@ server.tool(
   },
   async (input) => {
     try {
-      const result = await sshExecute(input);
+      const result = await sshExecute(credentialRegistry, input);
       return {
         content: [
           {
@@ -66,7 +71,7 @@ server.tool(
   },
   async (input) => {
     try {
-      const metadata = await credentialGet(input);
+      const metadata = await credentialGet(credentialRegistry, input);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(metadata) }],
       };
@@ -86,7 +91,7 @@ server.tool(
   {},
   async () => {
     try {
-      const backends = await credentialListBackends();
+      const backends = await credentialListBackends(credentialRegistry);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(backends) }],
       };

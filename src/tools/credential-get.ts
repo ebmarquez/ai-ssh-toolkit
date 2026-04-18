@@ -4,22 +4,21 @@
  * Returns username and availability status. NEVER returns the password.
  */
 
-import { getBackend } from '../credentials/registry.js';
 import type { CredentialMetadata } from '../credentials/backend.js';
+import type { CredentialRegistry } from '../credentials/registry.js';
 
 export interface CredentialGetInput {
   ref: string;
   backend?: string;
 }
 
-export async function credentialGet(input: CredentialGetInput): Promise<CredentialMetadata> {
+export async function credentialGet(
+  registry: CredentialRegistry,
+  input: CredentialGetInput
+): Promise<CredentialMetadata> {
   const { ref, backend: backendName = 'google-secret-manager' } = input;
 
-  const backend = getBackend(backendName);
-  if (!backend) {
-    throw new Error(`Unknown credential backend: "${backendName}"`);
-  }
-
+  const backend = registry.getBackend(backendName);
   const available = await backend.isAvailable();
   if (!available) {
     throw new Error(
@@ -28,6 +27,5 @@ export async function credentialGet(input: CredentialGetInput): Promise<Credenti
     );
   }
 
-  const metadata = await backend.getMetadata(ref);
-  return metadata;
+  return registry.getMetadata(backendName, ref);
 }
