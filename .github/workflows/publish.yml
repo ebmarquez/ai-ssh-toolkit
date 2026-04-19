@@ -14,12 +14,17 @@ jobs:
       id-token: write  # Required for OIDC / Trusted Publishing
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Show Node and npm versions
+        run: |
+          node --version
+          npm --version
 
       - name: Install dependencies
         run: npm ci
@@ -40,13 +45,18 @@ jobs:
       id-token: write  # Required for provenance (publishConfig.provenance=true in package.json)
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           registry-url: 'https://npm.pkg.github.com'
           scope: '@ebmarquez'
+
+      - name: Show Node and npm versions
+        run: |
+          node --version
+          npm --version
 
       - name: Install dependencies
         run: npm ci
