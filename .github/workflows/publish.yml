@@ -37,6 +37,7 @@ jobs:
     permissions:
       contents: read
       packages: write  # Required for GitHub Packages
+      id-token: write  # Required for provenance (publishConfig.provenance=true in package.json)
 
     steps:
       - uses: actions/checkout@v4
