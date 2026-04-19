@@ -1,6 +1,6 @@
 /**
  * Smoke test: verify the MCP server starts, responds to initialize,
- * and registers all 4 expected tools.
+ * and registers all expected tools.
  *
  * Sends JSON-RPC messages via stdin/stdout (no transport library needed).
  */
@@ -12,7 +12,7 @@ import { fileURLToPath } from 'url';
 
 const DIST_INDEX = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../dist/index.js');
 
-const EXPECTED_TOOLS = ['ssh_execute', 'ssh_multi_execute', 'credential_get', 'credential_list_backends', 'ssh_check_host'];
+const EXPECTED_TOOLS = ['ssh_execute', 'ssh_multi_execute', 'credential_get', 'credential_list_backends', 'ssh_check_host', 'version_check'];
 
 /**
  * Send one or more newline-delimited JSON-RPC messages to the server via stdin,
@@ -55,7 +55,7 @@ describe('MCP server smoke test', () => {
     expect(initResponse.result.capabilities.tools).toBeDefined();
   });
 
-  it('tools/list returns all 4 expected tools', () => {
+  it('tools/list returns all expected tools', () => {
     const responses = sendMessages([
       {
         jsonrpc: '2.0',
