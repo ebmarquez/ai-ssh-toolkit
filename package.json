@@ -1,6 +1,6 @@
 {
   "name": "ai-ssh-toolkit",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "MCP server for AI-driven SSH sessions with pluggable credential backends",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
