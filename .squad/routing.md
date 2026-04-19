@@ -1,39 +1,39 @@
 # Work Routing
 
-How to decide who handles what.
+How to decide who handles what in ai-ssh-toolkit.
 
 ## Routing Table
 
 | Work Type | Route To | Examples |
 |-----------|----------|----------|
-| {domain 1} | {Name} | {example tasks} |
-| {domain 2} | {Name} | {example tasks} |
-| {domain 3} | {Name} | {example tasks} |
-| Code review | {Name} | Review PRs, check quality, suggest improvements |
-| Testing | {Name} | Write tests, find edge cases, verify fixes |
-| Scope & priorities | {Name} | What to build next, trade-offs, decisions |
-| Session logging | Scribe | Automatic — never needs routing |
+| TypeScript implementation | Dev | MCP tools, credential backends, CLI wiring, workflow-related code |
+| Testing / validation | QA | Vitest coverage, regression tests, smoke tests, reproductions |
+| Security review / credential handling | Shadow | secret handling, SSH auth behavior, env leakage, prompt scrubbing |
+| Release / CI triage | Ralph | GitHub Actions failures, publish blockers, release coordination |
+| Code review | Shadow | PR review with security emphasis; QA for test-quality follow-up |
+| Scope & priorities | Ralph | what to build next, trade-offs, issue routing |
+| Session logging | Scribe | automatic — never needs routing |
 
 ## Issue Routing
 
 | Label | Action | Who |
 |-------|--------|-----|
-| `squad` | Triage: analyze issue, assign `squad:{member}` label | Lead |
+| `squad` | Triage: analyze issue, assign `squad:{member}` label | Ralph |
 | `squad:{name}` | Pick up issue and complete the work | Named member |
 
 ### How Issue Assignment Works
 
-1. When a GitHub issue gets the `squad` label, the **Lead** triages it — analyzing content, assigning the right `squad:{member}` label, and commenting with triage notes.
-2. When a `squad:{member}` label is applied, that member picks up the issue in their next session.
-3. Members can reassign by removing their label and adding another member's label.
-4. The `squad` label is the "inbox" — untriaged issues waiting for Lead review.
+1. When a GitHub issue gets the `squad` label, **Ralph** triages it.
+2. Ralph assigns the best `squad:{member}` label based on issue content.
+3. If the task is a good fit for `@copilot`, route to `squad:copilot` and expect PR review from Shadow or QA when appropriate.
+4. Members can reassign by removing their label and adding another member's label.
+5. The `squad` label is the inbox for untriaged work.
 
 ## Rules
 
-1. **Eager by default** — spawn all agents who could usefully start work, including anticipatory downstream work.
-2. **Scribe always runs** after substantial work, always as `mode: "background"`. Never blocks.
-3. **Quick facts → coordinator answers directly.** Don't spawn an agent for "what port does the server run on?"
-4. **When two agents could handle it**, pick the one whose domain is the primary concern.
-5. **"Team, ..." → fan-out.** Spawn all relevant agents in parallel as `mode: "background"`.
-6. **Anticipate downstream work.** If a feature is being built, spawn the tester to write test cases from requirements simultaneously.
-7. **Issue-labeled work** — when a `squad:{member}` label is applied to an issue, route to that member. The Lead handles all `squad` (base label) triage.
+1. **Ralph owns triage.** If work is ambiguous, route to Ralph first.
+2. **Security-sensitive changes route to Shadow.** Credential paths, SSH auth, env handling, and secret exposure are never “generic bug fixes.”
+3. **All implementation needs tests.** QA should be involved for regression coverage on non-trivial fixes.
+4. **Use @copilot for clear, bounded coding tasks.** Require review for medium-risk work.
+5. **Track via GitHub Issues + PRs.** No silent direct pushes for substantive work.
+6. **Escalate release blockers.** Publish/release failures are P0 until both required registries/paths are green.
