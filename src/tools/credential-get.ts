@@ -12,17 +12,11 @@ export interface CredentialGetInput {
   backend?: string;
 }
 
-const VALID_REF = /^[a-zA-Z0-9/_\-.@:]+$/;
-
 export async function credentialGet(
   registry: CredentialRegistry,
   input: CredentialGetInput
 ): Promise<CredentialMetadata> {
   const { ref, backend: backendName = 'google-secret-manager' } = input;
-
-  if (!VALID_REF.test(ref)) {
-    throw new Error('Invalid credential_ref format');
-  }
 
   const backend = registry.getBackend(backendName);
 

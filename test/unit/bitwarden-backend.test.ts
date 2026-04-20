@@ -50,6 +50,7 @@ describe("BitwardenBackend", () => {
   beforeEach(() => {
     backend = new BitwardenBackend();
     vi.clearAllMocks();
+    delete process.env.BW_SESSION;
     // Restore default mock — resolveCliPath returns a valid path
     vi.mocked(resolveCliPath).mockReturnValue("/usr/bin/bw");
   });
@@ -90,6 +91,19 @@ describe("BitwardenBackend", () => {
     it("should return false when bw status command fails", async () => {
       mockExecFileError("Command failed");
       expect(await backend.isAvailable()).toBe(false);
+    });
+
+    it("should use BW_SESSION from environment when present", async () => {
+      process.env.BW_SESSION = "env-session-key-123";
+      mockExecFile(JSON.stringify({ status: "unlocked" }));
+
+      expect(await backend.isAvailable()).toBe(true);
+
+      const mock = vi.mocked(execFile);
+      const callArgs = mock.mock.calls[0];
+      const args = callArgs[1] as string[];
+      expect(args).toContain("--session");
+      expect(args).toContain("env-session-key-123");
     });
   });
 

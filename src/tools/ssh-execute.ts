@@ -8,8 +8,6 @@
 import type { PlatformHint } from '../ssh/prompt-detector.js';
 import type { CredentialRegistry } from '../credentials/registry.js';
 
-const VALID_REF = /^[a-zA-Z0-9/_\-.@:]+$/;
-
 export interface SshExecuteInput {
   host: string;
   command: string;
@@ -42,9 +40,6 @@ export async function sshExecute(
   // wired into PtyManager when src/ssh/pty-manager.ts is implemented.
   let resolvedUsername = username ?? '';
   if (credential_ref) {
-    if (!VALID_REF.test(credential_ref)) {
-      throw new Error('Invalid credential_ref format');
-    }
     const backendName = credential_backend ?? 'google-secret-manager';
     const backend = registry.getBackend(backendName);
     try {
