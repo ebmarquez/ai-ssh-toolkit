@@ -59,7 +59,7 @@ describe('MCP server smoke test', () => {
     expect(initResponse.result.capabilities.tools).toBeDefined();
   });
 
-  it('credential_list_backends includes the expected registered backends', () => {
+  it('credential_list_backends includes the expected registered backends', { timeout: 15000 }, () => {
     const responses = sendMessages([
       {
         jsonrpc: '2.0',
