@@ -33,9 +33,18 @@ import { readFileSync } from 'fs';
 
 function getPackageVersion(): string {
   const packageJsonPath = new URL('../package.json', import.meta.url);
-  const raw = readFileSync(packageJsonPath, 'utf-8');
-  const pkg = JSON.parse(raw) as { version?: string };
-  return pkg.version ?? '0.0.0';
+  try {
+    const raw = readFileSync(packageJsonPath, 'utf-8');
+    const pkg = JSON.parse(raw) as { version?: string };
+    return pkg.version ?? '0.0.0';
+  } catch (err: unknown) {
+    process.stderr.write(
+      `Warning: failed to read package version from ${packageJsonPath.toString()}: ${
+        err instanceof Error ? err.message : String(err)
+      }\n`
+    );
+    return '0.0.0';
+  }
 }
 
 const server = new McpServer(

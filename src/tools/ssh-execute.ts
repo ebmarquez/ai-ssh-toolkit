@@ -39,7 +39,10 @@ export async function sshExecute(
   // TODO(pty): input.platform, input.timeout_ms, and resolvedUsername will be
   // wired into PtyManager when src/ssh/pty-manager.ts is implemented.
   let resolvedUsername = username ?? '';
-  if (credential_ref) {
+  if (credential_ref !== undefined) {
+    if (!credential_ref.trim()) {
+      throw new Error('credential_ref cannot be empty');
+    }
     const backendName = credential_backend ?? 'google-secret-manager';
     const backend = registry.getBackend(backendName);
     try {

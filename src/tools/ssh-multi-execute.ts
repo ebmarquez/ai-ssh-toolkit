@@ -66,12 +66,17 @@ export async function executeSingleHost(
     let username = input.username;
 
     if (input.credential_backend && input.credential_ref && registry) {
-      const cred = await registry.getCredential(
-        input.credential_backend,
-        input.credential_ref,
-      );
-      username = cred.username;
-      password = cred.password;
+      const backend = registry.getBackend(input.credential_backend);
+      try {
+        const cred = await registry.getCredential(
+          input.credential_backend,
+          input.credential_ref,
+        );
+        username = cred.username;
+        password = cred.password;
+      } finally {
+        await backend.cleanup();
+      }
     }
 
     const rawOutput = await runSshCommands({
