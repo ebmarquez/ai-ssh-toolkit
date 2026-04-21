@@ -2,8 +2,6 @@ import { PlatformHint, detectPrompt, detectPasswordPrompt } from "../ssh/prompt-
 import { scrubOutput } from "../ssh/output-scrubber.js";
 import { CredentialRegistry } from "../credentials/registry.js";
 
-const VALID_REF = /^[a-zA-Z0-9/_\-.@:]+$/;
-
 export interface SshMultiExecuteInput {
   hosts: string[];
   username: string;
@@ -68,20 +66,17 @@ export async function executeSingleHost(
     let username = input.username;
 
     if (input.credential_backend && input.credential_ref && registry) {
-      if (!VALID_REF.test(input.credential_ref)) {
-        return {
-          host,
-          success: false,
-          error: 'Invalid credential_ref format',
-          duration_ms: 0,
-        };
+      const backend = registry.getBackend(input.credential_backend);
+      try {
+        const cred = await registry.getCredential(
+          input.credential_backend,
+          input.credential_ref,
+        );
+        username = cred.username;
+        password = cred.password;
+      } finally {
+        await backend.cleanup();
       }
-      const cred = await registry.getCredential(
-        input.credential_backend,
-        input.credential_ref,
-      );
-      username = cred.username;
-      password = cred.password;
     }
 
     const rawOutput = await runSshCommands({

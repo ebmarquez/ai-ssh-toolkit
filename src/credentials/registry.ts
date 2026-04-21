@@ -25,18 +25,20 @@ export class CredentialRegistry {
 
   /** Probe all registered backends for availability */
   async discoverAvailability(): Promise<BackendStatus[]> {
-    const results: BackendStatus[] = [];
+    const entries = Array.from(this.backends.entries());
 
-    for (const [name, backend] of this.backends) {
-      try {
-        const available = await backend.isAvailable();
-        this.availability.set(name, available);
-        results.push({ name, available });
-      } catch {
-        this.availability.set(name, false);
-        results.push({ name, available: false });
-      }
-    }
+    const results = await Promise.all(
+      entries.map(async ([name, backend]): Promise<BackendStatus> => {
+        try {
+          const available = await backend.isAvailable();
+          this.availability.set(name, available);
+          return { name, available };
+        } catch {
+          this.availability.set(name, false);
+          return { name, available: false };
+        }
+      })
+    );
 
     return results;
   }

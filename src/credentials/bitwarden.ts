@@ -40,7 +40,9 @@ export class BitwardenBackend implements CredentialBackend {
   async isAvailable(): Promise<boolean> {
     try {
       this.cliPath = resolveCliPath("bw");
-      const { stdout } = await execFileAsync(this.cliPath, ["status"], {
+      this.hydrateSessionKeyFromEnv();
+      const args = this.sessionKey ? ["status", "--session", this.sessionKey] : ["status"];
+      const { stdout } = await execFileAsync(this.cliPath, args, {
         timeout: 10000,
       });
       const status = JSON.parse(stdout);
@@ -103,7 +105,14 @@ export class BitwardenBackend implements CredentialBackend {
     if (!this.cliPath) {
       this.cliPath = resolveCliPath("bw");
     }
+    this.hydrateSessionKeyFromEnv();
     return this.cliPath;
+  }
+
+  private hydrateSessionKeyFromEnv(): void {
+    if (!this.sessionKey && process.env.BW_SESSION) {
+      this.sessionKey = process.env.BW_SESSION;
+    }
   }
 
   private buildArgs(baseArgs: string[]): string[] {

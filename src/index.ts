@@ -25,14 +25,37 @@ import { credentialListBackends } from './tools/credential-list.js';
 import { sshCheckHost } from './tools/ssh-check.js';
 import { versionCheck } from './tools/version-check.js';
 import { CredentialRegistry } from './credentials/registry.js';
+import { BitwardenBackend } from './credentials/bitwarden.js';
+import { AzureKeyVaultBackend } from './credentials/azure-keyvault.js';
+import { EnvCredentialBackend } from './credentials/env.js';
 import { GoogleSecretManagerBackend } from './credentials/google-secret-manager.js';
+import { readFileSync } from 'fs';
+
+function getPackageVersion(): string {
+  const packageJsonPath = new URL('../package.json', import.meta.url);
+  try {
+    const raw = readFileSync(packageJsonPath, 'utf-8');
+    const pkg = JSON.parse(raw) as { version?: string };
+    return pkg.version ?? '0.0.0';
+  } catch (err: unknown) {
+    process.stderr.write(
+      `Warning: failed to read package version from ${packageJsonPath.toString()}: ${
+        err instanceof Error ? err.message : String(err)
+      }\n`
+    );
+    return '0.0.0';
+  }
+}
 
 const server = new McpServer(
-  { name: 'ai-ssh-toolkit', version: '0.1.0' },
+  { name: 'ai-ssh-toolkit', version: getPackageVersion() },
   { capabilities: { tools: {} } }
 );
 
 const registry = new CredentialRegistry();
+registry.register(new BitwardenBackend());
+registry.register(new AzureKeyVaultBackend());
+registry.register(new EnvCredentialBackend());
 registry.register(new GoogleSecretManagerBackend());
 
 // ── ssh_execute ──────────────────────────────────────────────────────────────
