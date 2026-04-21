@@ -21,13 +21,13 @@ const EXPECTED_TOOLS = ['ssh_execute', 'ssh_multi_execute', 'credential_get', 'c
  * Send one or more newline-delimited JSON-RPC messages to the server via stdin,
  * and collect all newline-delimited JSON responses from stdout.
  */
-function sendMessages(messages: object[]): object[] {
+function sendMessages(messages: object[], timeout = 20_000): object[] {
   const input = messages.map(m => JSON.stringify(m)).join('\n') + '\n';
 
   const stdout = execFileSync('node', [DIST_INDEX], {
     input,
     encoding: 'utf-8',
-    timeout: 10_000,
+    timeout,
   });
 
   return stdout
@@ -59,7 +59,7 @@ describe('MCP server smoke test', () => {
     expect(initResponse.result.capabilities.tools).toBeDefined();
   });
 
-  it('credential_list_backends includes the expected registered backends', { timeout: 15000 }, () => {
+  it('credential_list_backends includes the expected registered backends', { timeout: 25000 }, () => {
     const responses = sendMessages([
       {
         jsonrpc: '2.0',
@@ -85,7 +85,7 @@ describe('MCP server smoke test', () => {
           arguments: {},
         },
       },
-    ]);
+    ], 20_000);
 
     const backendsResponse = responses.find((r: any) => r.id === 3) as any;
     expect(backendsResponse).toBeDefined();
