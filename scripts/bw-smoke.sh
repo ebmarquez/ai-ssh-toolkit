@@ -24,7 +24,7 @@ cat > "${FAKE_BIN}/bw" <<'FAKEBW'
 #!/usr/bin/env bash
 # Fake Bitwarden CLI for smoke testing
 case "$*" in
-  status)
+  status*)
     echo '{"status":"unlocked"}'
     ;;
   "get item"*|*"get item"*)

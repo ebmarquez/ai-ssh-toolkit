@@ -108,7 +108,7 @@ TOOLS_JSON=$(echo "$RESPONSE" | node -e "
   process.exit(1);
 ")
 
-EXPECTED_TOOLS=("ssh_execute" "credential_get" "credential_list_backends")
+EXPECTED_TOOLS=("ssh_execute" "ssh_multi_execute" "ssh_check_host" "credential_get" "credential_list_backends" "version_check")
 for tool in "${EXPECTED_TOOLS[@]}"; do
   if echo "$TOOLS_JSON" | grep -q "\"${tool}\""; then
     echo "    tool '${tool}' present ✓"

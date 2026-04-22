@@ -70,7 +70,15 @@ jobs:
         run: npm install --prefix /tmp/pkg-test "./${TARBALL}"
 
       - name: Verify package starts
-        run: node /tmp/pkg-test/node_modules/ai-ssh-toolkit/dist/index.js --help || true
+        run: |
+          timeout 5 node /tmp/pkg-test/node_modules/ai-ssh-toolkit/dist/index.js 2>/dev/null || EXIT=$?
+          # Exit 124 = timeout (server started but kept running — expected for an MCP server)
+          # Exit 0   = clean exit
+          # Any other non-zero = startup failure
+          if [[ "${EXIT:-0}" != "0" && "${EXIT:-0}" != "124" ]]; then
+            echo "FAIL: server exited with code ${EXIT}" && exit 1
+          fi
+          echo "Server startup check passed (exit ${EXIT:-0})"
 
       - name: MCP smoke test
         run: scripts/mcp-smoke.sh /tmp/pkg-test
