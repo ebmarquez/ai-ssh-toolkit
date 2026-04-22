@@ -20,6 +20,7 @@ fi
 
 # ── Create fake bw CLI ───────────────────────────────────────────────────────
 FAKE_BIN=$(mktemp -d)
+trap 'rm -rf "$FAKE_BIN"' EXIT
 cat > "${FAKE_BIN}/bw" <<'FAKEBW'
 #!/usr/bin/env bash
 # Fake Bitwarden CLI for smoke testing
@@ -78,7 +79,6 @@ if echo "$LIST_RESPONSE" | grep -qi "bitwarden"; then
   echo "    'bitwarden' backend found ✓"
 else
   echo "FAIL: 'bitwarden' not found in credential_list_backends response" >&2
-  rm -rf "$FAKE_BIN"
   exit 1
 fi
 
@@ -118,12 +118,8 @@ else
   # Any non-ok result (error, no-response, parse-fail) is a hard failure.
   # The mock is set up correctly so credential_get MUST succeed.
   echo "FAIL: credential_get failed or returned an error: ${CRED_CHECK}" >&2
-  rm -rf "$FAKE_BIN"
   exit 1
 fi
-
-# ── Cleanup ──────────────────────────────────────────────────────────────────
-rm -rf "$FAKE_BIN"
 
 echo ""
 echo "==> Bitwarden smoke test PASSED ✓"
