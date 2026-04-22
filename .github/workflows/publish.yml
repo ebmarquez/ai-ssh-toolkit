@@ -32,8 +32,16 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish to npm with provenance
-        run: npm publish --access public --provenance
+      - name: Pack and smoke-test tarball
+        run: |
+          TARBALL=$(npm pack --json | node -e "console.log(JSON.parse(require('fs').readFileSync(0,'utf-8'))[0].filename)")
+          echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
+          npm install --prefix /tmp/pkg-test "./${TARBALL}"
+          scripts/mcp-smoke.sh /tmp/pkg-test
+          scripts/bw-smoke.sh /tmp/pkg-test
+
+      - name: Publish verified tarball to npm with provenance
+        run: npm publish "./${TARBALL}" --access public --provenance
         # No NODE_AUTH_TOKEN needed — OIDC handles authentication
 
   publish-gpr:
@@ -64,6 +72,14 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Pack and smoke-test tarball
+        run: |
+          TARBALL=$(npm pack --json | node -e "console.log(JSON.parse(require('fs').readFileSync(0,'utf-8'))[0].filename)")
+          echo "TARBALL_ORIG=${TARBALL}" >> "$GITHUB_ENV"
+          npm install --prefix /tmp/pkg-test "./${TARBALL}"
+          scripts/mcp-smoke.sh /tmp/pkg-test
+          scripts/bw-smoke.sh /tmp/pkg-test
+
       - name: Add scoped name for GitHub Packages
         run: |
           # GitHub Packages requires a scoped name (@owner/package)
@@ -73,7 +89,12 @@ jobs:
             require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
 
-      - name: Publish to GitHub Packages
-        run: npm publish --access public
+      - name: Re-pack with scoped name
+        run: |
+          TARBALL=$(npm pack --json | node -e "console.log(JSON.parse(require('fs').readFileSync(0,'utf-8'))[0].filename)")
+          echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
+
+      - name: Publish verified tarball to GitHub Packages
+        run: npm publish "./${TARBALL}" --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
