@@ -14,9 +14,9 @@ jobs:
       id-token: write  # Required for OIDC / Trusted Publishing
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
@@ -53,9 +53,9 @@ jobs:
       id-token: write  # Required for provenance (publishConfig.provenance=true in package.json)
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: 24
           registry-url: 'https://npm.pkg.github.com'
@@ -89,10 +89,15 @@ jobs:
             require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
 
-      - name: Re-pack with scoped name
+      - name: Re-pack with scoped name and re-verify
         run: |
           TARBALL=$(npm pack --json | node -e "console.log(JSON.parse(require('fs').readFileSync(0,'utf-8'))[0].filename)")
           echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
+          # Re-smoke-test the scoped tarball — it must match the same contract
+          rm -rf /tmp/pkg-test-scoped
+          npm install --prefix /tmp/pkg-test-scoped "./${TARBALL}"
+          scripts/mcp-smoke.sh /tmp/pkg-test-scoped
+          scripts/bw-smoke.sh /tmp/pkg-test-scoped
 
       - name: Publish verified tarball to GitHub Packages
         run: npm publish "./${TARBALL}" --access public
