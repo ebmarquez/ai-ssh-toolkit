@@ -44,3 +44,44 @@ jobs:
 
       - run: npm ci
       - run: npm run lint
+
+  artifact-smoke:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Pack tarball
+        run: |
+          TARBALL=$(npm pack --json | node -e "console.log(JSON.parse(require('fs').readFileSync(0,'utf-8'))[0].filename)")
+          echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
+
+      - name: Install tarball in clean temp dir
+        run: npm install --prefix /tmp/pkg-test "./${TARBALL}"
+
+      - name: Verify package starts
+        run: |
+          timeout 5 node /tmp/pkg-test/node_modules/ai-ssh-toolkit/dist/index.js 2>/dev/null || EXIT=$?
+          # Exit 124 = timeout (server started but kept running — expected for an MCP server)
+          # Exit 0   = clean exit
+          # Any other non-zero = startup failure
+          if [[ "${EXIT:-0}" != "0" && "${EXIT:-0}" != "124" ]]; then
+            echo "FAIL: server exited with code ${EXIT}" && exit 1
+          fi
+          echo "Server startup check passed (exit ${EXIT:-0})"
+
+      - name: MCP smoke test
+        run: scripts/mcp-smoke.sh /tmp/pkg-test
+
+      - name: Bitwarden mock smoke test
+        run: scripts/bw-smoke.sh /tmp/pkg-test
