@@ -1,20 +1,20 @@
 /**
- * PTY Session Manager — spawns interactive SSH sessions via node-pty.
+ * PTY Session Manager — spawns non-interactive SSH sessions via node-pty.
  *
  * Uses existing helpers:
  *   - detectPasswordPrompt / detectPrompt  (./prompt-detector.ts)
  *   - scrubOutput                          (./output-scrubber.ts)
  */
 
-import * as pty from 'node-pty';
 import { detectPasswordPrompt, detectPrompt, type PlatformHint } from './prompt-detector.js';
 import { scrubOutput } from './output-scrubber.js';
 
 export interface PtySessionOptions {
   host: string;
   username: string;
-  /** Password as Buffer — zeroed by caller after this function resolves/rejects */
-  password: Buffer;
+  /** Password as Buffer — zeroed by caller after this function resolves/rejects.
+   *  Optional: omit when using SSH key / agent authentication. */
+  password?: Buffer;
   command: string;
   platform?: PlatformHint;
   timeout_ms?: number;
@@ -26,14 +26,16 @@ export interface PtySessionResult {
 }
 
 /**
- * Run a single command over an interactive SSH PTY session.
+ * Run a single command over SSH using a PTY (non-interactive mode).
  *
  * Lifecycle:
- *   1. Spawn SSH with StrictHostKeyChecking=accept-new
- *   2. If a password prompt appears, send the password (then zero a local copy)
- *   3. Wait for a shell prompt (platform-aware)
- *   4. Send the command, collect output until next shell prompt
- *   5. Close the session and return scrubbed output + exit code
+ *   1. Spawn `ssh user@host <command>` — command is passed as SSH argv,
+ *      so SSH executes it non-interactively and exits when it completes.
+ *   2. If a password prompt appears and a password Buffer was supplied,
+ *      write it to the PTY then continue waiting for process exit.
+ *      If no password was supplied but a prompt is detected, the session
+ *      is rejected with a clear error.
+ *   3. On process exit, scrub and return the collected output + exit code.
  */
 export async function runSshSession(opts: PtySessionOptions): Promise<PtySessionResult> {
   const {
@@ -45,6 +47,9 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
     timeout_ms = 30000,
   } = opts;
 
+  // Dynamic import to allow mocking in tests (matches ssh-multi-execute.ts pattern)
+  const { default: pty } = await import('node-pty');
+
   const sshArgs = [
     '-o', 'StrictHostKeyChecking=accept-new',
     '-o', 'NumberOfPasswordPrompts=1',
@@ -53,14 +58,43 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
     command,
   ];
 
+  // Build a filtered environment allowlist — never expose full process.env
+  // to SSH child processes.
+  const childEnv: Record<string, string> = {};
+  const allowlist = [
+    'HOME',
+    'PATH',
+    'TERM',
+    'LANG',
+    'LC_ALL',
+    // SSH config / agent vars
+    'SSH_AUTH_SOCK',
+    'SSH_AGENT_PID',
+    // Windows/platform-critical vars
+    'USERPROFILE',
+    'HOMEDRIVE',
+    'HOMEPATH',
+    'SystemRoot',
+    'WINDIR',
+    'ComSpec',
+    'PATHEXT',
+    'TEMP',
+    'TMP',
+  ];
+  for (const key of allowlist) {
+    const value = process.env[key];
+    if (value) childEnv[key] = value;
+  }
+  childEnv.TERM ??= 'xterm-color';
+
   return new Promise<PtySessionResult>((resolve, reject) => {
-    let term: pty.IPty;
+    let term: import('node-pty').IPty;
     try {
       term = pty.spawn('ssh', sshArgs, {
         name: 'xterm-color',
         cols: 220,
         rows: 24,
-        env: process.env as Record<string, string>,
+        env: childEnv,
       });
     } catch (err) {
       return reject(new Error(`Failed to spawn SSH PTY: ${String(err)}`));
@@ -71,16 +105,10 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
     let passwordSent = false;
     let settled = false;
 
-    // Local copy of password string so we can zero it after sending
-    let passwordStr = password.toString();
-
     function finish(code: number | null) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-
-      // Zero the local password copy
-      passwordStr = '\x00'.repeat(passwordStr.length);
 
       const cleaned = scrubOutput(rawOutput);
       resolve({ output: cleaned, exit_code: code });
@@ -90,7 +118,6 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      passwordStr = '\x00'.repeat(passwordStr.length);
       try { term.kill(); } catch { /* ignore */ }
       reject(err);
     }
@@ -105,21 +132,26 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
       // Handle password prompt
       if (!passwordSent && detectPasswordPrompt(rawOutput)) {
         passwordSent = true;
-        term.write(passwordStr + '\r');
-        // Zero the local copy immediately after sending
-        passwordStr = '\x00'.repeat(passwordStr.length);
+        if (!password || password.length === 0) {
+          fail(new Error(
+            'SSH password prompt received but no credential was provided. ' +
+            'Use credential_ref to supply credentials, or ensure key-based auth is configured.'
+          ));
+          return;
+        }
+        // Convert Buffer to string only at the moment of write — never store as a string variable.
+        // Buffer.fill(0) in the caller is the only real zero-wipe.
+        term.write(password.toString('utf-8') + '\r');
         return;
       }
 
-      // When running a non-interactive command (ssh host cmd), SSH will
+      // When running a non-interactive command (ssh user@host <cmd>), SSH will
       // execute the command and exit — we detect either the shell prompt
       // (interactive fallback) or just wait for exit. Since we pass the
-      // command directly on the SSH command line, the PTY will just exit
-      // after command completion. Detect shell prompt as an early-exit signal
-      // only for interactive flows.
+      // command directly on the SSH command line, the PTY will exit
+      // after command completion.
       if (detectPrompt(rawOutput, platform)) {
-        // We got a prompt — command has finished in interactive mode
-        // Don't close yet; wait for onExit which arrives immediately after
+        // Got a prompt — wait for onExit which arrives immediately after
       }
     });
 

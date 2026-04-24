@@ -61,6 +61,9 @@ export async function sshExecute(
       // Copy into our own buffer so backend.cleanup() zeroing stagedBuffers
       // doesn't wipe our copy before we send it to the PTY session.
       passwordBuffer = Buffer.from(cred.password) as Buffer<ArrayBufferLike>;
+      // Zero the original credential buffer immediately after copying — don't
+      // rely on backend.cleanup() which may be a no-op (e.g. GoogleSecretManager).
+      cred.password.fill(0);
     } finally {
       // cleanup() zeros the backend's staged copy (not our local copy above)
       await backend.cleanup();

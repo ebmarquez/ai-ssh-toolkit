@@ -29,7 +29,7 @@ vi.mock('node-pty', () => {
     write: fakeWrite,
     kill: fakeKill,
   }));
-  return { spawn: spawnMock };
+  return { default: { spawn: spawnMock } };
 });
 // -------------------------------------------------------------------------
 
@@ -58,6 +58,9 @@ describe('runSshSession', () => {
   it('returns output and exit_code on successful command', async () => {
     const promise = runSshSession(makeOpts());
 
+    // Let the dynamic import inside runSshSession resolve before interacting
+    await new Promise(r => setTimeout(r, 0));
+
     // Simulate command output then exit
     fakeOnData!('eric@test-host:~$ ');
     fakeOnExit!({ exitCode: 0 });
@@ -69,6 +72,9 @@ describe('runSshSession', () => {
 
   it('handles password prompt and sends password', async () => {
     const promise = runSshSession(makeOpts({ password: Buffer.from('mypassword') }));
+
+    // Let the dynamic import inside runSshSession resolve before interacting
+    await new Promise(r => setTimeout(r, 0));
 
     // Simulate password prompt then shell prompt then exit
     fakeOnData!('Password: ');
@@ -99,6 +105,9 @@ describe('runSshSession', () => {
 
   it('scrubs ANSI escape sequences from output', async () => {
     const promise = runSshSession(makeOpts());
+
+    // Let the dynamic import inside runSshSession resolve before interacting
+    await new Promise(r => setTimeout(r, 0));
 
     // Simulate output with ANSI codes
     fakeOnData!('\x1B[32mhello\x1B[0m\r\neric@test-host:~$ ');
