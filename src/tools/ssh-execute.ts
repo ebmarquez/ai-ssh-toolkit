@@ -1,12 +1,10 @@
 /**
  * ssh_execute tool handler — runs a command over an interactive SSH PTY session.
- *
- * NOTE: The full PTY session manager (src/ssh/pty-manager.ts) is not yet implemented.
- * This handler returns a clear not-implemented error rather than silently failing.
  */
 
 import type { PlatformHint } from '../ssh/prompt-detector.js';
 import type { CredentialRegistry } from '../credentials/registry.js';
+import { runSshSession } from '../ssh/pty-manager.js';
 
 export interface SshExecuteInput {
   host: string;
@@ -33,12 +31,19 @@ export async function sshExecute(
     username,
     credential_ref,
     credential_backend,
+    platform = 'auto',
+    timeout_ms = 30000,
   } = input;
 
-  // Resolve credentials if a ref is provided
-  // TODO(pty): input.platform, input.timeout_ms, and resolvedUsername will be
-  // wired into PtyManager when src/ssh/pty-manager.ts is implemented.
+  // Validate required inputs
+  if (!host) throw new Error('host is required');
+  if (!command) throw new Error('command is required');
+
+  // Resolve credentials
   let resolvedUsername = username ?? '';
+  // node Buffer — use ArrayBufferLike to satisfy TS6 strict generic check
+  let passwordBuffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+
   if (credential_ref !== undefined) {
     if (!credential_ref.trim()) {
       throw new Error('credential_ref cannot be empty');
@@ -53,24 +58,33 @@ export async function sshExecute(
       }
       const cred = await backend.getCredential(credential_ref);
       resolvedUsername = cred.username || resolvedUsername;
-      // Zero-fill password buffer after capturing — not used until PTY is wired
+      // Copy into our own buffer so backend.cleanup() zeroing stagedBuffers
+      // doesn't wipe our copy before we send it to the PTY session.
+      passwordBuffer = Buffer.from(cred.password) as Buffer<ArrayBufferLike>;
+      // Zero the original credential buffer immediately after copying — don't
+      // rely on backend.cleanup() which may be a no-op (e.g. GoogleSecretManager).
       cred.password.fill(0);
     } finally {
+      // cleanup() zeros the backend's staged copy (not our local copy above)
       await backend.cleanup();
     }
   }
 
-  // Validate inputs before attempting connection
-  if (!host) throw new Error('host is required');
-  if (!command) throw new Error('command is required');
+  if (!resolvedUsername) throw new Error('username is required (provide username or a credential_ref with a username)');
 
-  // TODO(pty): wire detectPrompt, detectPasswordPrompt, scrubOutput, resolvedUsername,
-  // platform, input.timeout_ms when PtyManager (src/ssh/pty-manager.ts) is implemented.
-  void resolvedUsername;
-
-  throw new Error(
-    'ssh_execute: PTY session manager (src/ssh/pty-manager.ts) is not yet implemented. ' +
-    'The credential lookup and output-scrubbing helpers are wired and ready; ' +
-    'implement PtyManager to complete this tool.'
-  );
+  // Run the PTY session
+  try {
+    const result = await runSshSession({
+      host,
+      username: resolvedUsername,
+      password: passwordBuffer,
+      command,
+      platform,
+      timeout_ms,
+    });
+    return result;
+  } finally {
+    // Zero-fill password buffer after PTY session completes (success or failure)
+    passwordBuffer.fill(0);
+  }
 }
