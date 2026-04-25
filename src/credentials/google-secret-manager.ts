@@ -112,7 +112,8 @@ export class GoogleSecretManagerBackend implements CredentialBackend {
     const gcloud = await this.resolveGcloud();
     const { project, secretName, version } = this.parseRef(ref);
 
-    // Retrieve password — captured to string temporarily, then moved to Buffer
+    // Retrieve password — use --format get(payload.data) which returns base64-encoded bytes.
+    // Decode from base64 into a Buffer immediately; never assign the decoded value to a string.
     const { stdout: passwordRaw } = await execFileAsync(
       gcloud,
       [
@@ -124,8 +125,8 @@ export class GoogleSecretManagerBackend implements CredentialBackend {
       { env: { ...process.env } }
     );
 
-    // Convert to Buffer immediately, wipe the string reference
-    const password = Buffer.from(passwordRaw.trim());
+    // payload.data is base64-encoded — decode directly into Buffer
+    const password = Buffer.from(passwordRaw.trim(), 'base64');
 
     // Username: derive from secret name convention "name-username" suffix
     // or fall back to empty string (caller should supply username separately)
@@ -150,10 +151,12 @@ export class GoogleSecretManagerBackend implements CredentialBackend {
     try {
       const { stdout } = await execFileAsync(
         gcloud,
-        ['secrets', 'versions', 'access', 'latest', '--secret', usernameSecret, '--project', project],
+        ['secrets', 'versions', 'access', 'latest', '--secret', usernameSecret, '--project', project,
+         '--format', 'get(payload.data)'],
         { env: { ...process.env } }
       );
-      return stdout.trim();
+      // payload.data is base64-encoded
+      return Buffer.from(stdout.trim(), 'base64').toString('utf-8');
     } catch {
       return '';
     }
