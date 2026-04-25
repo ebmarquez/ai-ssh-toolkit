@@ -15,7 +15,7 @@
  */
 
 import { describe, it, expect, afterAll } from 'vitest';
-import { execSync, spawn, ChildProcess } from 'child_process';
+import { execSync, spawnSync, spawn, ChildProcess } from 'child_process';
 import { mkdtempSync, rmSync } from 'fs';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -95,8 +95,11 @@ describe.skipIf(SKIP)('MCP + Azure Key Vault + SSH E2E', { timeout: 60_000 }, ()
       const tarball = JSON.parse(packOutput)[0].filename;
       const tarballPath = resolve(REPO_ROOT, tarball);
 
-      // Install into temp dir
-      execSync(`npm install --prefix ${tmpDir} ${tarballPath}`, { encoding: 'utf-8' });
+      // Install into temp dir — use spawnSync with arg array to avoid shell injection (CodeQL)
+      spawnSync('npm', ['install', '--prefix', tmpDir, tarballPath], {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      });
 
       // Server entrypoint inside the installed package
       serverPath = resolve(tmpDir, 'node_modules/ai-ssh-toolkit/dist/index.js');
