@@ -140,6 +140,43 @@ npm run build
 npm test
 ```
 
+## Integration Tests
+
+Integration tests run against live Azure resources and require the `az` CLI to be authenticated.
+
+### Run locally
+
+```bash
+# Authenticate first (SP login or az login)
+bash ~/.config/azure/sp-login.sh   # service principal
+# or
+az login
+
+# Run Azure Key Vault integration tests
+AZURE_KV_ENABLED=true AZURE_KV_NAME=rg-ut-bw npx vitest run test/integration/
+```
+
+The SSH end-to-end test also requires `SSH_E2E_ENABLED=true` and `surface-aac-1.local` to be reachable:
+
+```bash
+AZURE_KV_ENABLED=true SSH_E2E_ENABLED=true AZURE_KV_NAME=rg-ut-bw npx vitest run test/integration/mcp-azure-keyvault.integration.test.ts
+```
+
+### GitHub Actions
+
+The `.github/workflows/integration.yml` workflow runs the Azure KV integration test automatically on push and pull request using **OIDC authentication** — no long-lived secrets or credentials to rotate.
+
+Required repository secrets:
+
+| Secret | Description |
+|---|---|
+| `AZURE_CLIENT_ID` | OIDC app registration client ID |
+| `AZURE_TENANT_ID` | Azure AD tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
+| `AZURE_KV_NAME` | Key vault name (e.g. `rg-ut-bw`) |
+
+> **Note:** The SSH E2E test is excluded from CI — `surface-aac-1.local` is not reachable from GitHub runners. Run it locally.
+
 ## License
 
 MIT
