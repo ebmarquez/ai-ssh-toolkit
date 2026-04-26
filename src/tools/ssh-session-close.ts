@@ -25,7 +25,7 @@ export async function sshSessionClose(
 
   // Gracefully exit the shell, then forcibly kill the PTY
   try {
-    session.ptyProcess.write('exit\n');
+    session.ptyProcess.write('exit\r');
   } catch {
     // PTY may already be dead — continue to kill
   }

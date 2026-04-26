@@ -17,10 +17,11 @@ export function scrubOutput(raw: string): string {
     "",
   );
 
-  // Remove ANSI escape sequences (CSI sequences: ESC [ ... final-byte),
-  // including DEC private mode sequences (e.g. bracketed-paste ESC[?2004h/l)
+  // Remove ANSI/CSI escape sequences including DEC private mode sequences
+  // (e.g. bracketed-paste ESC[?2004h/l, function keys ESC[1~, etc.)
+  // Final-byte range covers 0x40–0x7E per ECMA-48 §5.4 plus ~ for VT sequences.
   // eslint-disable-next-line no-control-regex
-  scrubbed = scrubbed.replace(/\x1B\[[?!>]?[0-9;]*[A-Za-z]/g, "");
+  scrubbed = scrubbed.replace(/\x1B\[[?!>]?[0-9;]*[A-Za-z~]/g, "");
 
   // Remove OSC sequences (ESC ] ... ST or BEL)
   // eslint-disable-next-line no-control-regex

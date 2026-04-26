@@ -52,6 +52,14 @@ describe("scrubOutput", () => {
     expect(result).toContain("show version");
   });
 
+  it("removes VT-style CSI sequences ending with tilde (e.g. ESC[1~)", () => {
+    const input = "\x1B[1~switch01# show run\x1B[4~";
+    const result = scrubOutput(input);
+    expect(result).not.toContain("\x1B[");
+    expect(result).toContain("switch01#");
+    expect(result).toContain("show run");
+  });
+
   it("handles empty input", () => {
     expect(scrubOutput("")).toBe("");
   });

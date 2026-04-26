@@ -205,7 +205,7 @@ describe('sshSessionClose', () => {
     const result = await sshSessionClose(store, { session_id: session.id });
 
     expect(result.message).toBe('Session closed');
-    expect(pty.write).toHaveBeenCalledWith('exit\n');
+    expect(pty.write).toHaveBeenCalledWith('exit\r');
     expect(pty.kill).toHaveBeenCalled();
     expect(store.get(session.id)).toBeUndefined();
     store.destroy();
