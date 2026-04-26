@@ -9,6 +9,7 @@
  */
 
 import type { IPty } from 'node-pty';
+import type { IDisposable } from 'node-pty';
 import type { PlatformHint } from './prompt-detector.js';
 
 export interface ManagedSession {
@@ -19,11 +20,15 @@ export interface ManagedSession {
   username: string;
   platform: PlatformHint;
   outputBuffer: string; // accumulates PTY output since last command
+  idleTimeoutMs?: number; // per-session idle timeout override
+  inFlight: boolean;      // true while a command is executing
+  disposables: IDisposable[]; // active PTY listeners to dispose on cleanup
 }
 
 export class SessionStore {
   private sessions = new Map<string, ManagedSession>();
   private cleanupInterval: NodeJS.Timeout;
+  private destroyed = false;
 
   constructor(private idleTimeoutMs = 5 * 60 * 1000) {
     // Run cleanup every 60 s to evict idle sessions.
@@ -41,16 +46,30 @@ export class SessionStore {
     return this.sessions.get(id);
   }
 
-  /** Remove a session from the store. Returns true if it existed. */
+  /** Remove a session from the store (disposes listeners). Returns true if it existed. */
   delete(id: string): boolean {
+    const session = this.sessions.get(id);
+    if (session) {
+      for (const d of session.disposables) {
+        try { d.dispose(); } catch { /* ignore */ }
+      }
+      session.disposables.length = 0;
+    }
     return this.sessions.delete(id);
   }
 
-  /** Kill and remove sessions that have been idle longer than idleTimeoutMs. */
+  /** Kill and remove sessions that have been idle longer than their timeout. */
   private evictIdle(): void {
     const now = Date.now();
     for (const [id, session] of this.sessions) {
-      if (now - session.lastActivity > this.idleTimeoutMs) {
+      // Never evict a session with a command in flight
+      if (session.inFlight) continue;
+      const timeout = session.idleTimeoutMs ?? this.idleTimeoutMs;
+      if (now - session.lastActivity > timeout) {
+        for (const d of session.disposables) {
+          try { d.dispose(); } catch { /* ignore */ }
+        }
+        session.disposables.length = 0;
         try {
           session.ptyProcess.kill();
         } catch {
@@ -61,10 +80,16 @@ export class SessionStore {
     }
   }
 
-  /** Kill all sessions and stop the cleanup interval. */
+  /** Kill all sessions and stop the cleanup interval. Idempotent. */
   destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
     clearInterval(this.cleanupInterval);
     for (const session of this.sessions.values()) {
+      for (const d of session.disposables) {
+        try { d.dispose(); } catch { /* ignore */ }
+      }
+      session.disposables.length = 0;
       try {
         session.ptyProcess.kill();
       } catch {

@@ -10,15 +10,22 @@ import { sshSessionExecute } from '../../src/tools/ssh-session-execute.js';
 import { sshSessionClose } from '../../src/tools/ssh-session-close.js';
 
 function makeFakePty(): IPty & { _triggerData: (d: string) => void; _triggerExit: (code: number) => void; write: ReturnType<typeof vi.fn>; kill: ReturnType<typeof vi.fn> } {
-  let onDataCb: ((d: string) => void) | null = null;
+  const onDataCbs: ((d: string) => void)[] = [];
   let onExitCb: ((ev: { exitCode: number }) => void) | null = null;
 
   const fakePty = {
     write: vi.fn(),
     kill: vi.fn(),
-    onData(cb: (d: string) => void) { onDataCb = cb; },
+    onData(cb: (d: string) => void) {
+      onDataCbs.push(cb);
+      const disposable = { dispose: vi.fn(() => {
+        const idx = onDataCbs.indexOf(cb);
+        if (idx !== -1) onDataCbs.splice(idx, 1);
+      }) };
+      return disposable;
+    },
     onExit(cb: (ev: { exitCode: number }) => void) { onExitCb = cb; },
-    _triggerData(d: string) { onDataCb?.(d); },
+    _triggerData(d: string) { for (const cb of [...onDataCbs]) cb(d); },
     _triggerExit(code: number) { onExitCb?.({ exitCode: code }); },
     pid: 1234,
     cols: 220,
@@ -41,6 +48,8 @@ function makeSession(pty: IPty, overrides: Partial<ManagedSession> = {}): Manage
     username: 'testuser',
     platform: 'linux',
     outputBuffer: '',
+    inFlight: false,
+    disposables: [],
     ...overrides,
   };
 }
@@ -134,6 +143,54 @@ describe('sshSessionExecute', () => {
 
     await promise;
     expect(store.get(session.id)!.lastActivity).toBeGreaterThan(oldActivity);
+    store.destroy();
+  });
+
+  it('rejects concurrent execute on same session', async () => {
+    const store = new SessionStore();
+    const pty = makeFakePty();
+    const session = makeSession(pty);
+    store.add(session);
+
+    // Start first command (will not resolve because we don't send a prompt)
+    const first = sshSessionExecute(store, {
+      session_id: session.id,
+      command: 'sleep 10',
+      timeout_ms: 5000,
+    });
+
+    await new Promise(r => setTimeout(r, 0));
+
+    // Second concurrent call should be rejected
+    await expect(
+      sshSessionExecute(store, { session_id: session.id, command: 'echo hi' })
+    ).rejects.toThrow('A command is already running on this session');
+
+    // Now resolve the first command
+    pty._triggerData('testuser@test-host:~$ ');
+    await first;
+    store.destroy();
+  });
+
+  it('disposes onData listener after command completes', async () => {
+    const store = new SessionStore();
+    const pty = makeFakePty();
+    const session = makeSession(pty);
+    store.add(session);
+
+    const promise = sshSessionExecute(store, {
+      session_id: session.id,
+      command: 'ls',
+      timeout_ms: 5000,
+    });
+
+    await new Promise(r => setTimeout(r, 0));
+    pty._triggerData('testuser@test-host:~$ ');
+
+    await promise;
+    // disposables should be cleaned up
+    expect(session.disposables).toHaveLength(0);
+    expect(session.inFlight).toBe(false);
     store.destroy();
   });
 });

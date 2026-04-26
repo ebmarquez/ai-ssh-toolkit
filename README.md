@@ -52,12 +52,14 @@ Connect to a host via SSH, run a single command, return output, and close. Best 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `host` | string | ✅ | Hostname or IP |
-| `username` | string | ✅ | SSH username |
+| `username` | string | ❌* | SSH username |
 | `command` | string | ✅ | Command to execute |
 | `credential_backend` | string | ❌ | Backend name (bitwarden, azure-keyvault, env) |
 | `credential_ref` | string | ❌ | Backend-specific reference (BW item name, AKV secret name) |
 | `platform` | string | ❌ | Target OS hint: nxos, os10, sonic, linux, auto (default: auto) |
 | `timeout_ms` | number | ❌ | Command timeout in ms (default: 30000) |
+
+\*Optional when `credential_ref` provides a username.
 
 ### `credential_get`
 
@@ -121,7 +123,7 @@ Expired sessions are cleaned up automatically — you don't need to explicitly c
 ### Security
 
 - Session IDs are **ephemeral `crypto.randomUUID()` values** — never logged, never included in error messages.
-- Credentials are resolved once at open time and the password `Buffer` is zero-filled immediately after the PTY handshake.
+- Credentials are resolved once at open time and the password `Buffer` is zero-filled immediately after the PTY write.
 - The env allowlist prevents full `process.env` leakage to SSH child processes.
 
 ### Tool reference
@@ -133,12 +135,14 @@ Open a persistent interactive SSH shell. Returns a `session_id` for subsequent c
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `host` | string | ✅ | Hostname or IP address |
-| `username` | string | ❌ | SSH username (overrides credential ref username) |
+| `username` | string | ❌* | SSH username (overrides credential ref username) |
 | `credential_ref` | string | ❌ | Credential reference (BW item name, AKV secret, etc.) |
 | `credential_backend` | string | ❌ | Backend name: bitwarden, azure-keyvault, env (default: google-secret-manager) |
 | `platform` | string | ❌ | Prompt detection hint: nxos, os10, sonic, linux, auto (default: auto) |
 | `timeout_ms` | number | ❌ | Connect + initial prompt timeout in ms (default: 30000) |
 | `idle_timeout_ms` | number | ❌ | Inactivity auto-close timeout in ms (default: 300000) |
+
+\*Optional when `credential_ref` provides a username.
 
 **Returns:**
 ```json

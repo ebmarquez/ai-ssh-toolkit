@@ -40,6 +40,7 @@ export async function sshSessionOpen(
     credential_backend,
     platform = 'auto',
     timeout_ms = 30_000,
+    idle_timeout_ms,
   } = input;
 
   if (!host) throw new Error('host is required');
@@ -134,6 +135,9 @@ export async function sshSessionOpen(
         username: resolvedUsername,
         platform,
         outputBuffer: '',
+        idleTimeoutMs: idle_timeout_ms,
+        inFlight: false,
+        disposables: [],
       });
 
       resolve({
@@ -158,6 +162,7 @@ export async function sshSessionOpen(
     }, timeout_ms);
 
     term.onData((data: string) => {
+      if (settled) return;
       outputBuffer += data;
 
       // Handle password prompt
@@ -171,6 +176,7 @@ export async function sshSessionOpen(
           return;
         }
         term.write(passwordBuffer.toString('utf-8') + '\r');
+        passwordBuffer.fill(0);
         return;
       }
 

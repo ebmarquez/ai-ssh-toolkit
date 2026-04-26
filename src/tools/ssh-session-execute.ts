@@ -5,7 +5,8 @@
  * then returns the scrubbed output.
  */
 
-import type { SessionStore } from '../ssh/session-store.js';
+import type { SessionStore, ManagedSession } from '../ssh/session-store.js';
+import type { IDisposable } from 'node-pty';
 import { detectPrompt } from '../ssh/prompt-detector.js';
 import { scrubOutput } from '../ssh/output-scrubber.js';
 
@@ -27,25 +28,43 @@ export async function sshSessionExecute(
 ): Promise<SshSessionExecuteResult> {
   const { session_id, command, timeout_ms = 30_000 } = input;
 
-  const session = sessionStore.get(session_id);
-  if (!session) {
+  const sessionOrUndef = sessionStore.get(session_id);
+  if (!sessionOrUndef) {
     throw new Error('Session not found or expired');
+  }
+  const session: ManagedSession = sessionOrUndef;
+
+  if (session.inFlight) {
+    throw new Error('A command is already running on this session. Wait for it to complete.');
   }
 
   // Update activity timestamp
   session.lastActivity = Date.now();
   session.outputBuffer = ''; // reset capture buffer for this command
+  session.inFlight = true;
+
+  const sess = session; // capture for closure — TypeScript narrowing guard
 
   return new Promise<SshSessionExecuteResult>((resolve, reject) => {
     let captureBuffer = '';
     let settled = false;
+    let dataDisposable: IDisposable | undefined;
+
+    function cleanup() {
+      if (dataDisposable) {
+        try { dataDisposable.dispose(); } catch { /* ignore */ }
+        const idx = sess.disposables.indexOf(dataDisposable);
+        if (idx !== -1) sess.disposables.splice(idx, 1);
+        dataDisposable = undefined;
+      }
+      sess.inFlight = false;
+    }
 
     function finish(output: string) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      // Remove data listener by resetting onData to a no-op — we can't
-      // unsubscribe in node-pty, so we gate on the `settled` flag instead.
+      cleanup();
       const cleaned = scrubOutput(output);
       resolve({ output: cleaned, exit_code: null, session_id });
     }
@@ -54,6 +73,7 @@ export async function sshSessionExecute(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      cleanup();
       reject(err);
     }
 
@@ -62,18 +82,25 @@ export async function sshSessionExecute(
     }, timeout_ms);
 
     // Listen for PTY output
-    session.ptyProcess.onData((data: string) => {
+    dataDisposable = sess.ptyProcess.onData((data: string) => {
       if (settled) return;
       captureBuffer += data;
-      session.outputBuffer += data;
-      session.lastActivity = Date.now();
+      sess.outputBuffer += data;
+      sess.lastActivity = Date.now();
 
-      if (detectPrompt(captureBuffer, session.platform)) {
+      if (detectPrompt(captureBuffer, sess.platform)) {
         finish(captureBuffer);
       }
     });
+    sess.disposables.push(dataDisposable);
+
+    // Listen for PTY exit (fast-fail instead of waiting for timeout)
+    const exitDisposable = sess.ptyProcess.onExit(({ exitCode }) => {
+      exitDisposable.dispose();
+      fail(new Error(`SSH PTY exited unexpectedly with code ${exitCode} during command execution`));
+    });
 
     // Write the command to the PTY
-    session.ptyProcess.write(command + '\n');
+    sess.ptyProcess.write(command + '\n');
   });
 }

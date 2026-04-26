@@ -33,6 +33,8 @@ function makeSession(overrides: Partial<ManagedSession> = {}): ManagedSession {
     username: 'testuser',
     platform: 'linux',
     outputBuffer: '',
+    inFlight: false,
+    disposables: [],
     ...overrides,
   };
 }
@@ -93,6 +95,29 @@ describe('SessionStore', () => {
       (store as unknown as { evictIdle: () => void }).evictIdle();
 
       expect(store.get(session.id)).toBe(session);
+    });
+
+    it('uses per-session idleTimeoutMs when set', () => {
+      const fastStore = new SessionStore(100); // 100ms default
+      // Session has a long per-session timeout — should NOT be evicted
+      const session = makeSession({ lastActivity: Date.now() - 200, idleTimeoutMs: 60_000 });
+      fastStore.add(session);
+
+      (fastStore as unknown as { evictIdle: () => void }).evictIdle();
+
+      expect(fastStore.get(session.id)).toBe(session);
+      fastStore.destroy();
+    });
+
+    it('does not evict a session with inFlight=true', () => {
+      const fastStore = new SessionStore(100);
+      const session = makeSession({ lastActivity: Date.now() - 200, inFlight: true });
+      fastStore.add(session);
+
+      (fastStore as unknown as { evictIdle: () => void }).evictIdle();
+
+      expect(fastStore.get(session.id)).toBe(session);
+      fastStore.destroy();
     });
   });
 

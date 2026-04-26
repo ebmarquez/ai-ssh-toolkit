@@ -64,6 +64,12 @@ registry.register(new GoogleSecretManagerBackend());
 
 const sessionStore = new SessionStore();
 
+// Graceful shutdown: destroy all sessions before exiting
+const shutdown = () => { sessionStore.destroy(); process.exit(0); };
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);
+process.on('exit', () => sessionStore.destroy());
+
 // ── ssh_execute ──────────────────────────────────────────────────────────────
 server.tool(
   'ssh_execute',
