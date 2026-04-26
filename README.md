@@ -289,6 +289,12 @@ credential_ref: "MY_SWITCH"  → reads MY_SWITCH_USERNAME and MY_SWITCH_PASSWORD
 - `StrictHostKeyChecking=no` is never used
 - External CLI paths resolved to absolute at startup
 
+### Command Validation: Out of Scope (By Design)
+
+`ssh_execute` and related tools accept any command string with no allowlist, blocklist, or length restriction. This is intentional — `ai-ssh-toolkit` is a general-purpose tool and restricting commands would break legitimate use cases. The tool's security contract covers **credential protection only**; command-level access control is the operator's responsibility (via `sshd_config`, TACACS+, sudoers, etc.).
+
+See [DESIGN-DECISIONS.md](DESIGN-DECISIONS.md) for the full rationale.
+
 See [SECURITY.md](SECURITY.md) for full details and vulnerability reporting.
 
 ## Development
