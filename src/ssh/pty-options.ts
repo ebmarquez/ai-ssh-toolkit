@@ -1,8 +1,8 @@
 /**
- * Shared PTY spawn options for all SSH sessions.
+ * Shared PTY spawn options used across all SSH session tools.
  *
- * Centralised here so both pty-manager and ssh-multi-execute stay in sync
- * when defaults change.
+ * Centralised here so pty-manager, ssh-multi-execute, and ssh-session-open
+ * stay in sync when defaults change.
  */
 
 export const SSH_PTY_OPTIONS = {

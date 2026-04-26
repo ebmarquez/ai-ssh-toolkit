@@ -10,6 +10,7 @@ import type { PlatformHint } from '../ssh/prompt-detector.js';
 import type { CredentialRegistry } from '../credentials/registry.js';
 import type { SessionStore } from '../ssh/session-store.js';
 import { detectPasswordPrompt, detectPrompt } from '../ssh/prompt-detector.js';
+import { SSH_PTY_OPTIONS } from '../ssh/pty-options.js';
 
 export interface SshSessionOpenInput {
   host: string;
@@ -106,9 +107,7 @@ export async function sshSessionOpen(
     let term: import('node-pty').IPty;
     try {
       term = pty.spawn('ssh', sshArgs, {
-        name: 'xterm-color',
-        cols: 220,
-        rows: 24,
+        ...SSH_PTY_OPTIONS,
         env: childEnv,
       });
     } catch (err) {
