@@ -18,6 +18,10 @@ export async function sshSessionClose(
 ): Promise<SshSessionCloseResult> {
   const { session_id } = input;
 
+  if (!session_id?.trim()) {
+    throw new Error('session_id is required and cannot be empty');
+  }
+
   const session = sessionStore.get(session_id);
   if (!session) {
     throw new Error('Session not found or expired');
@@ -27,17 +31,11 @@ export async function sshSessionClose(
     throw new Error('Cannot close session while a command is executing. Wait for the command to complete or time out.');
   }
 
-  // Gracefully exit the shell, then forcibly kill the PTY
+  // Gracefully send exit, then let SessionStore.delete() own the kill + dispose
   try {
     session.ptyProcess.write('exit\r');
   } catch {
-    // PTY may already be dead — continue to kill
-  }
-
-  try {
-    session.ptyProcess.kill();
-  } catch {
-    // ignore
+    // PTY may already be dead — continue
   }
 
   sessionStore.delete(session_id);

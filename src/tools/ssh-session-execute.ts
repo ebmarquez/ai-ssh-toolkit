@@ -28,6 +28,13 @@ export async function sshSessionExecute(
 ): Promise<SshSessionExecuteResult> {
   const { session_id, command, timeout_ms = 30_000 } = input;
 
+  if (!session_id?.trim()) {
+    throw new Error('session_id is required and cannot be empty');
+  }
+  if (!command?.trim()) {
+    throw new Error('command is required and cannot be empty');
+  }
+
   const sessionOrUndef = sessionStore.get(session_id);
   if (!sessionOrUndef) {
     throw new Error('Session not found or expired');
