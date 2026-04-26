@@ -85,6 +85,11 @@ server.tool(
       .optional()
       .describe('Platform hint for prompt detection (default: auto)'),
     timeout_ms: z.number().int().positive().optional().describe('Connection + command timeout in milliseconds (default: 30000)'),
+    parse_output: z.boolean().optional().describe('When true, parse the raw output into structured JSON alongside raw text (default: false)'),
+    platform_hint: z
+      .enum(['nxos', 'dell-os10', 'sonic', 'auto'])
+      .optional()
+      .describe('Parser platform hint for structured output (nxos, dell-os10, sonic, auto — default: auto)'),
   },
   async (input) => {
     try {

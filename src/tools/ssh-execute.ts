@@ -5,6 +5,7 @@
 import type { PlatformHint } from '../ssh/prompt-detector.js';
 import type { CredentialRegistry } from '../credentials/registry.js';
 import { runSshSession } from '../ssh/pty-manager.js';
+import { parseOutput, type ParserPlatform } from '../parsers/index.js';
 
 export interface SshExecuteInput {
   host: string;
@@ -14,11 +15,14 @@ export interface SshExecuteInput {
   credential_backend?: string;
   platform?: PlatformHint;
   timeout_ms?: number;
+  parse_output?: boolean;
+  platform_hint?: ParserPlatform;
 }
 
 export interface SshExecuteResult {
   output: string;
   exit_code: number | null;
+  structured_output?: unknown;
 }
 
 export async function sshExecute(
@@ -33,6 +37,8 @@ export async function sshExecute(
     credential_backend,
     platform = 'auto',
     timeout_ms = 30000,
+    parse_output: shouldParse = false,
+    platform_hint = 'auto',
   } = input;
 
   // Validate required inputs
@@ -74,7 +80,7 @@ export async function sshExecute(
 
   // Run the PTY session
   try {
-    const result = await runSshSession({
+    const rawResult = await runSshSession({
       host,
       username: resolvedUsername,
       password: passwordBuffer,
@@ -82,7 +88,15 @@ export async function sshExecute(
       platform,
       timeout_ms,
     });
-    return result;
+
+    if (shouldParse) {
+      const structured = parseOutput(command, rawResult.output, platform_hint);
+      if (structured !== null) {
+        return { ...rawResult, structured_output: structured };
+      }
+    }
+
+    return rawResult;
   } finally {
     // Zero-fill password buffer after PTY session completes (success or failure)
     passwordBuffer.fill(0);
