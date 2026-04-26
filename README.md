@@ -1,6 +1,6 @@
 # ai-ssh-toolkit
 
-MCP server for AI-driven SSH session management and secure credential retrieval. Enables AI assistants (GitHub Copilot CLI, Claude, ChatGPT) to execute commands on remote hosts via SSH with pluggable credential backends.
+MCP server for AI-driven SSH session management and secure credential retrieval. Enables GitHub Copilot to execute commands on remote hosts via SSH with pluggable credential backends.
 
 ## Features
 
@@ -28,9 +28,9 @@ Add to your MCP config:
 }
 ```
 
-### Claude Desktop
+### VS Code / GitHub Copilot Chat
 
-Add to `claude_desktop_config.json`:
+Add to your `.vscode/mcp.json` (workspace) or user `settings.json`:
 
 ```json
 {
