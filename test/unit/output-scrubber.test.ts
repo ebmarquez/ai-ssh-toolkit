@@ -44,6 +44,14 @@ describe("scrubOutput", () => {
     expect(result).toContain("secret sauce recipe: unavailable");
   });
 
+  it("removes DEC private mode CSI sequences (e.g. bracketed-paste)", () => {
+    const input = "\x1B[?2004hswitch01# show version\x1B[?2004l";
+    const result = scrubOutput(input);
+    expect(result).not.toContain("\x1B[?");
+    expect(result).toContain("switch01#");
+    expect(result).toContain("show version");
+  });
+
   it("handles empty input", () => {
     expect(scrubOutput("")).toBe("");
   });

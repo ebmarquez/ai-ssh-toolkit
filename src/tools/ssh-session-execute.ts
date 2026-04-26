@@ -50,12 +50,18 @@ export async function sshSessionExecute(
     let settled = false;
     let dataDisposable: IDisposable | undefined;
 
+    let exitDisposable: IDisposable | undefined;
+
     function cleanup() {
       if (dataDisposable) {
         try { dataDisposable.dispose(); } catch { /* ignore */ }
         const idx = sess.disposables.indexOf(dataDisposable);
         if (idx !== -1) sess.disposables.splice(idx, 1);
         dataDisposable = undefined;
+      }
+      if (exitDisposable) {
+        try { exitDisposable.dispose(); } catch { /* ignore */ }
+        exitDisposable = undefined;
       }
       sess.inFlight = false;
     }
@@ -95,12 +101,16 @@ export async function sshSessionExecute(
     sess.disposables.push(dataDisposable);
 
     // Listen for PTY exit (fast-fail instead of waiting for timeout)
-    const exitDisposable = sess.ptyProcess.onExit(({ exitCode }) => {
-      exitDisposable.dispose();
+    exitDisposable = sess.ptyProcess.onExit(({ exitCode }) => {
       fail(new Error(`SSH PTY exited unexpectedly with code ${exitCode} during command execution`));
     });
 
-    // Write the command to the PTY
-    sess.ptyProcess.write(command + '\n');
+    // Write the command to the PTY — wrap in try/catch so a dead PTY
+    // doesn't leave inFlight=true and listeners dangling
+    try {
+      sess.ptyProcess.write(command + '\r');
+    } catch (err) {
+      fail(new Error(`Failed to write to PTY: ${String(err)}`));
+    }
   });
 }

@@ -119,11 +119,21 @@ export async function sshSessionOpen(
     let outputBuffer = '';
     let passwordSent = false;
     let settled = false;
+    let openDataDisposable: import('node-pty').IDisposable | undefined;
+    let openExitDisposable: import('node-pty').IDisposable | undefined;
+
+    function disposeOpenListeners() {
+      try { openDataDisposable?.dispose(); } catch { /* ignore */ }
+      try { openExitDisposable?.dispose(); } catch { /* ignore */ }
+      openDataDisposable = undefined;
+      openExitDisposable = undefined;
+    }
 
     function succeed() {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      disposeOpenListeners();
       passwordBuffer.fill(0);
 
       const sessionId = crypto.randomUUID();
@@ -152,6 +162,7 @@ export async function sshSessionOpen(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      disposeOpenListeners();
       passwordBuffer.fill(0);
       try { term.kill(); } catch { /* ignore */ }
       reject(err);
@@ -161,7 +172,7 @@ export async function sshSessionOpen(
       fail(new Error(`SSH session open timed out after ${timeout_ms}ms`));
     }, timeout_ms);
 
-    term.onData((data: string) => {
+    openDataDisposable = term.onData((data: string) => {
       if (settled) return;
       outputBuffer += data;
 
@@ -186,7 +197,7 @@ export async function sshSessionOpen(
       }
     });
 
-    term.onExit(({ exitCode }: { exitCode: number }) => {
+    openExitDisposable = term.onExit(({ exitCode }: { exitCode: number }) => {
       fail(new Error(`SSH process exited unexpectedly with code ${exitCode}`));
     });
   });

@@ -75,7 +75,7 @@ describe('sshSessionExecute', () => {
     expect(result.session_id).toBe(session.id);
     expect(result.output).toContain('Linux test-host');
     expect(result.exit_code).toBeNull();
-    expect(pty.write).toHaveBeenCalledWith('uname -a\n');
+    expect(pty.write).toHaveBeenCalledWith('uname -a\r');
     store.destroy();
   });
 
