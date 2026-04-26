@@ -105,6 +105,8 @@ export async function sshSessionExecute(
     // Listen for PTY exit (fast-fail instead of waiting for timeout)
     // Also pushed to sess.disposables so SessionStore.delete/destroy cleans it up
     exitDisposable = sess.ptyProcess.onExit(({ exitCode }) => {
+      // Remove the dead session from the store so subsequent calls get "Session not found"
+      sessionStore.delete(sess.id);
       fail(new Error(`SSH PTY exited unexpectedly with code ${exitCode} during command execution`));
     });
     sess.disposables.push(exitDisposable);
@@ -114,6 +116,8 @@ export async function sshSessionExecute(
     try {
       sess.ptyProcess.write(command + '\r');
     } catch (err) {
+      // PTY is dead — remove the session from the store and fail cleanly
+      sessionStore.delete(sess.id);
       fail(new Error(`Failed to write to PTY: ${String(err)}`));
     }
   });

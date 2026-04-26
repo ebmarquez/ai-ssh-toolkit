@@ -150,6 +150,14 @@ export async function sshSessionOpen(
         disposables: [],
       });
 
+      // Register a persistent onExit handler so unexpected PTY death
+      // auto-removes the session from the store instead of leaving a zombie.
+      const persistentExitDisposable = term.onExit(() => {
+        sessionStore.delete(sessionId);
+      });
+      const stored = sessionStore.get(sessionId);
+      if (stored) stored.disposables.push(persistentExitDisposable);
+
       resolve({
         session_id: sessionId,
         host,
