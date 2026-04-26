@@ -19,6 +19,10 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import * as z from 'zod/v3';
 
 import { sshExecute } from './tools/ssh-execute.js';
+import { sshSessionOpen } from './tools/ssh-session-open.js';
+import { sshSessionExecute } from './tools/ssh-session-execute.js';
+import { sshSessionClose } from './tools/ssh-session-close.js';
+import { SessionStore } from './ssh/session-store.js';
 import { sshMultiExecute } from './tools/ssh-multi-execute.js';
 import { credentialGet } from './tools/credential-get.js';
 import { credentialListBackends } from './tools/credential-list.js';
@@ -57,6 +61,14 @@ registry.register(new BitwardenBackend());
 registry.register(new AzureKeyVaultBackend());
 registry.register(new EnvCredentialBackend());
 registry.register(new GoogleSecretManagerBackend());
+
+const sessionStore = new SessionStore();
+
+// Graceful shutdown: destroy all sessions before exiting
+const shutdown = () => { sessionStore.destroy(); process.exit(0); };
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);
+process.on('exit', () => sessionStore.destroy());
 
 // ── ssh_execute ──────────────────────────────────────────────────────────────
 server.tool(
@@ -170,6 +182,77 @@ server.tool(
   async (input) => {
     try {
       const result = await sshCheckHost(input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_session_open ─────────────────────────────────────────────────────────
+server.tool(
+  'ssh_session_open',
+  'Open a persistent interactive SSH shell session. Returns a session_id for use with ssh_session_execute and ssh_session_close.',
+  {
+    host: z.string().describe('Hostname or IP address of the remote target'),
+    username: z.string().optional().describe('SSH username (overrides credential ref username)'),
+    credential_ref: z.string().optional().describe('Credential reference string understood by the selected backend'),
+    credential_backend: z.string().optional().describe('Name of the credential backend (default: google-secret-manager)'),
+    platform: z
+      .enum(['nxos', 'os10', 'sonic', 'linux', 'auto'])
+      .optional()
+      .describe('Platform hint for prompt detection (default: auto)'),
+    timeout_ms: z.number().int().positive().optional().describe('Connect + initial prompt timeout in milliseconds (default: 30000)'),
+    idle_timeout_ms: z.number().int().positive().optional().describe('Inactivity auto-close timeout in milliseconds (default: 300000)'),
+  },
+  async (input) => {
+    try {
+      const result = await sshSessionOpen(registry, sessionStore, input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_session_execute ───────────────────────────────────────────────────────
+server.tool(
+  'ssh_session_execute',
+  'Execute a command inside an open persistent SSH session.',
+  {
+    session_id: z.string().describe('Session ID returned by ssh_session_open'),
+    command: z.string().describe('Command to execute in the session'),
+    timeout_ms: z.number().int().positive().optional().describe('Command timeout in milliseconds (default: 30000)'),
+  },
+  async (input) => {
+    try {
+      const result = await sshSessionExecute(sessionStore, input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_session_close ─────────────────────────────────────────────────────────
+server.tool(
+  'ssh_session_close',
+  'Close a persistent SSH session opened with ssh_session_open.',
+  {
+    session_id: z.string().describe('Session ID returned by ssh_session_open'),
+  },
+  async (input) => {
+    try {
+      const result = await sshSessionClose(sessionStore, input);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
