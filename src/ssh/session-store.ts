@@ -46,10 +46,14 @@ export class SessionStore {
     return this.sessions.get(id);
   }
 
-  /** Remove a session from the store (disposes listeners). Returns true if it existed. */
+  /** Remove a session from the store (disposes listeners). Returns true if it existed.
+   * If the session is inFlight, listeners are NOT disposed (the in-flight execute
+   * owns them and will clean up via cleanup()). The PTY is still killed.
+   */
   delete(id: string): boolean {
     const session = this.sessions.get(id);
-    if (session) {
+    if (session && !session.inFlight) {
+      // Only dispose listeners when no command is executing
       for (const d of session.disposables) {
         try { d.dispose(); } catch { /* ignore */ }
       }

@@ -54,7 +54,7 @@ Connect to a host via SSH, run a single command, return output, and close. Best 
 | `host` | string | ✅ | Hostname or IP |
 | `username` | string | ❌* | SSH username |
 | `command` | string | ✅ | Command to execute |
-| `credential_backend` | string | ❌ | Backend name (bitwarden, azure-keyvault, env) |
+| `credential_backend` | string | ❌ | Backend name: bitwarden, azure-keyvault, env, google-secret-manager (default: google-secret-manager) |
 | `credential_ref` | string | ❌ | Backend-specific reference (BW item name, AKV secret name) |
 | `platform` | string | ❌ | Target OS hint: nxos, os10, sonic, linux, auto (default: auto) |
 | `timeout_ms` | number | ❌ | Command timeout in ms (default: 30000) |
@@ -137,7 +137,7 @@ Open a persistent interactive SSH shell. Returns a `session_id` for subsequent c
 | `host` | string | ✅ | Hostname or IP address |
 | `username` | string | ❌* | SSH username (overrides credential ref username) |
 | `credential_ref` | string | ❌ | Credential reference (BW item name, AKV secret, etc.) |
-| `credential_backend` | string | ❌ | Backend name: bitwarden, azure-keyvault, env (default: google-secret-manager) |
+| `credential_backend` | string | ❌ | Backend name: bitwarden, azure-keyvault, env, google-secret-manager (default: google-secret-manager) |
 | `platform` | string | ❌ | Prompt detection hint: nxos, os10, sonic, linux, auto (default: auto) |
 | `timeout_ms` | number | ❌ | Connect + initial prompt timeout in ms (default: 30000) |
 | `idle_timeout_ms` | number | ❌ | Inactivity auto-close timeout in ms (default: 300000) |

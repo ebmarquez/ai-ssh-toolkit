@@ -7,8 +7,8 @@ import type { MockInstance } from 'vitest';
 
 // ---- node-pty mock -------------------------------------------------------
 interface FakePtyHandlers {
-  onData: (cb: (data: string) => void) => void;
-  onExit: (cb: (ev: { exitCode: number }) => void) => void;
+  onData: (cb: (data: string) => void) => { dispose: ReturnType<typeof vi.fn> };
+  onExit: (cb: (ev: { exitCode: number }) => void) => { dispose: ReturnType<typeof vi.fn> };
   write: MockInstance;
   kill: MockInstance;
 }
@@ -23,8 +23,8 @@ vi.mock('node-pty', () => {
   fakeWrite = vi.fn();
   fakeKill = vi.fn();
   spawnMock = vi.fn((): FakePtyHandlers => ({
-    onData: (cb) => { fakeOnData = cb; },
-    onExit: (cb) => { fakeOnExit = cb; },
+    onData: (cb) => { fakeOnData = cb; return { dispose: vi.fn(() => { fakeOnData = null; }) }; },
+    onExit: (cb) => { fakeOnExit = cb; return { dispose: vi.fn(() => { fakeOnExit = null; }) }; },
     write: fakeWrite,
     kill: fakeKill,
   }));

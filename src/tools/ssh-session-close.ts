@@ -23,6 +23,10 @@ export async function sshSessionClose(
     throw new Error('Session not found or expired');
   }
 
+  if (session.inFlight) {
+    throw new Error('Cannot close session while a command is executing. Wait for the command to complete or time out.');
+  }
+
   // Gracefully exit the shell, then forcibly kill the PTY
   try {
     session.ptyProcess.write('exit\r');
