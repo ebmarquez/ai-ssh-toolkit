@@ -145,13 +145,13 @@ export class GoogleSecretManagerBackend implements CredentialBackend {
     gcloud: string,
     project: string,
     secretName: string,
-    _version: string
+    version: string
   ): Promise<string> {
     const usernameSecret = `${secretName}-username`;
     try {
       const { stdout } = await execFileAsync(
         gcloud,
-        ['secrets', 'versions', 'access', 'latest', '--secret', usernameSecret, '--project', project,
+        ['secrets', 'versions', 'access', version, '--secret', usernameSecret, '--project', project,
          '--format', 'get(payload.data)'],
         { env: { ...process.env } }
       );

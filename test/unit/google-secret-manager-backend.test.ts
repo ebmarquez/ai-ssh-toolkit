@@ -108,14 +108,17 @@ describe('GoogleSecretManagerBackend', () => {
 
     it('handles specific version in ref (project/secret/version)', async () => {
       const b64 = Buffer.from('versioned-pass').toString('base64');
+      const b64User = Buffer.from('versioned-user').toString('base64');
 
       setupMock({
         'versions access 3 --secret my-secret --project my-project': b64,
-        'my-secret-username': new Error('not found'),
+        // username secret should also be fetched with version 3, not latest
+        'versions access 3 --secret my-secret-username': b64User,
       });
 
       const result = await backend.getCredential('my-project/my-secret/3');
       expect(result.password.toString('utf-8')).toBe('versioned-pass');
+      expect(result.username).toBe('versioned-user');
     });
 
     it('returns a Buffer, not a raw base64 string', async () => {
