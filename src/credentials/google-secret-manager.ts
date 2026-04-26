@@ -148,18 +148,25 @@ export class GoogleSecretManagerBackend implements CredentialBackend {
     version: string
   ): Promise<string> {
     const usernameSecret = `${secretName}-username`;
-    try {
-      const { stdout } = await execFileAsync(
-        gcloud,
-        ['secrets', 'versions', 'access', version, '--secret', usernameSecret, '--project', project,
-         '--format', 'get(payload.data)'],
-        { env: { ...process.env } }
-      );
-      // payload.data is base64-encoded
-      return Buffer.from(stdout.trim(), 'base64').toString('utf-8');
-    } catch {
-      return '';
+    // Try the requested version first; fall back to 'latest' if not found.
+    // This handles the common case where username secrets don't have the same
+    // version history as password secrets.
+    const versionsToTry = version === 'latest' ? ['latest'] : [version, 'latest'];
+    for (const v of versionsToTry) {
+      try {
+        const { stdout } = await execFileAsync(
+          gcloud,
+          ['secrets', 'versions', 'access', v, '--secret', usernameSecret, '--project', project,
+           '--format', 'get(payload.data)'],
+          { env: { ...process.env } }
+        );
+        // payload.data is base64-encoded
+        return Buffer.from(stdout.trim(), 'base64').toString('utf-8');
+      } catch {
+        // try next version or fall through to ''
+      }
     }
+    return '';
   }
 
   async getMetadata(ref: string): Promise<CredentialMetadata> {

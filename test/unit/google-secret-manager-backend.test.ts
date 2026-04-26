@@ -29,14 +29,18 @@ function setupMock(map: Record<string, string | Error>) {
   mockExecFileAsync.mockImplementation(
     (_cmd: string, argv: string[], _opts?: object) => {
       const key = argv.join(' ');
+      // 'which gcloud' resolution — always succeeds
+      if (_cmd === 'which') {
+        return Promise.resolve({ stdout: '/usr/bin/gcloud', stderr: '' });
+      }
       const entry = Object.entries(map).find(([k]) => key.includes(k));
       if (entry) {
         const val = entry[1];
         if (val instanceof Error) return Promise.reject(val);
         return Promise.resolve({ stdout: val, stderr: '' });
       }
-      // default: which gcloud resolution
-      return Promise.resolve({ stdout: '/usr/bin/gcloud', stderr: '' });
+      // Fail explicitly so unexpected calls surface in tests
+      return Promise.reject(new Error(`Unexpected execFileAsync call: ${_cmd} ${key}`));
     },
   );
 }
