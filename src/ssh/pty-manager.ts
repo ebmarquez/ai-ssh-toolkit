@@ -8,6 +8,7 @@
 
 import { detectPasswordPrompt, detectPrompt, type PlatformHint } from './prompt-detector.js';
 import { scrubOutput } from './output-scrubber.js';
+import { SSH_PTY_OPTIONS } from './pty-options.js';
 
 export interface PtySessionOptions {
   host: string;
@@ -91,9 +92,7 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
     let term: import('node-pty').IPty;
     try {
       term = pty.spawn('ssh', sshArgs, {
-        name: 'xterm-color',
-        cols: 220,
-        rows: 24,
+        ...SSH_PTY_OPTIONS,
         env: childEnv,
       });
     } catch (err) {

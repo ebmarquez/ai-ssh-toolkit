@@ -72,6 +72,12 @@ describe("executeSingleHost", () => {
     expect(result.success).toBe(true);
     expect(result.output).toContain("NX-OS 10.0");
     expect(result.error).toBeUndefined();
+    // Verify rows:0 is passed to prevent --More-- pagination on network devices
+    expect(vi.mocked(pty.spawn)).toHaveBeenCalledWith(
+      "ssh",
+      expect.any(Array),
+      expect.objectContaining({ rows: 0 }),
+    );
   });
 
   it("returns failure when SSH exits with non-zero code", async () => {

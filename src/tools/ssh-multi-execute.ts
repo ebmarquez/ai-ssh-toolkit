@@ -1,6 +1,7 @@
 import { PlatformHint, detectPrompt, detectPasswordPrompt } from "../ssh/prompt-detector.js";
 import { scrubOutput } from "../ssh/output-scrubber.js";
 import { CredentialRegistry } from "../credentials/registry.js";
+import { SSH_PTY_OPTIONS } from "../ssh/pty-options.js";
 
 export interface SshMultiExecuteInput {
   hosts: string[];
@@ -243,10 +244,10 @@ async function runSshCommands(opts: RunSshOptions): Promise<string> {
     childEnv.TERM ??= "xterm-color";
 
     const proc = pty.spawn("ssh", sshArgs, {
-      name: "xterm-color",
-      cols: 220,
-      rows: 40,
-      // Pass filtered env only — never expose full process.env to SSH children.
+      ...SSH_PTY_OPTIONS,
+      // Intentionally pass only the allowlisted child environment here
+      // instead of process.env to avoid leaking unrelated or sensitive
+      // parent-process variables into the SSH child process.
       env: childEnv,
     });
 
