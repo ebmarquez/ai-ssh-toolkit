@@ -112,7 +112,8 @@ export class GoogleSecretManagerBackend implements CredentialBackend {
     const gcloud = await this.resolveGcloud();
     const { project, secretName, version } = this.parseRef(ref);
 
-    // Retrieve password — captured to string temporarily, then moved to Buffer
+    // Retrieve password — use --format get(payload.data) which returns base64-encoded bytes.
+    // Decode from base64 into a Buffer immediately; never assign the decoded value to a string.
     const { stdout: passwordRaw } = await execFileAsync(
       gcloud,
       [
@@ -124,8 +125,8 @@ export class GoogleSecretManagerBackend implements CredentialBackend {
       { env: { ...process.env } }
     );
 
-    // Convert to Buffer immediately, wipe the string reference
-    const password = Buffer.from(passwordRaw.trim());
+    // payload.data is base64-encoded — decode directly into Buffer
+    const password = Buffer.from(passwordRaw.trim(), 'base64');
 
     // Username: derive from secret name convention "name-username" suffix
     // or fall back to empty string (caller should supply username separately)
@@ -144,19 +145,28 @@ export class GoogleSecretManagerBackend implements CredentialBackend {
     gcloud: string,
     project: string,
     secretName: string,
-    _version: string
+    version: string
   ): Promise<string> {
     const usernameSecret = `${secretName}-username`;
-    try {
-      const { stdout } = await execFileAsync(
-        gcloud,
-        ['secrets', 'versions', 'access', 'latest', '--secret', usernameSecret, '--project', project],
-        { env: { ...process.env } }
-      );
-      return stdout.trim();
-    } catch {
-      return '';
+    // Try the requested version first; fall back to 'latest' if not found.
+    // This handles the common case where username secrets don't have the same
+    // version history as password secrets.
+    const versionsToTry = version === 'latest' ? ['latest'] : [version, 'latest'];
+    for (const v of versionsToTry) {
+      try {
+        const { stdout } = await execFileAsync(
+          gcloud,
+          ['secrets', 'versions', 'access', v, '--secret', usernameSecret, '--project', project,
+           '--format', 'get(payload.data)'],
+          { env: { ...process.env } }
+        );
+        // payload.data is base64-encoded
+        return Buffer.from(stdout.trim(), 'base64').toString('utf-8');
+      } catch {
+        // try next version or fall through to ''
+      }
     }
+    return '';
   }
 
   async getMetadata(ref: string): Promise<CredentialMetadata> {
