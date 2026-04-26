@@ -12,7 +12,7 @@ This document records architectural and security design decisions for `ai-ssh-to
 
 ### Decision
 
-The `command` field in `ssh_execute` (and related tools) accepts any string with no allowlist, blocklist, or length restriction. This is intentional and will not change.
+The `command` field in `ssh_execute` (and related tools) accepts any non-empty string. The tool does not impose an allowlist, blocklist, or other content-based validation on commands; basic sanity checks such as rejecting empty input are still enforced. This is intentional and will not change.
 
 ### Rationale
 
@@ -28,18 +28,16 @@ Imposing a command allowlist or blocklist would:
 
 ### Security Contract
 
-The tool's security contract is narrowly scoped:
+The tool is designed to avoid exposing credentials used during tool-managed SSH authentication flows. Everything else is out of scope.
 
-> **Credentials used to establish the SSH session must never leak.** Everything else is out of scope.
-
-Concretely, the tool guarantees:
-- Passwords are stored as `Buffer` and zero-filled after every use — never as plain strings
+Concretely, the current implementation provides these protections:
+- Passwords are kept in memory as `Buffer` objects where practical, converted to a JS string only transiently at PTY write time (because `node-pty` requires strings), and the `Buffer` is zero-filled after every use
 - Credentials are never written to disk (no temp files)
-- Credentials are never passed as command-line arguments (use stdin piping)
-- PTY output is scrubbed to remove password echoes before returning to the MCP client
-- MCP responses never contain credential values
+- Password values are not placed in process arguments (`argv`)
+- PTY output receives best-effort scrubbing of common credential prompt patterns before returning to the MCP client — this is not a guarantee against arbitrary echoed secret content
+- MCP responses are intended not to include credentials supplied by the tool itself, but may still contain secrets printed by remote commands or remote hosts
 
-Command content, access control, and authorization are the responsibility of the operator and the infrastructure being accessed (e.g., SSH server ACLs, sudoers policy, network device privilege levels).
+Command content, access control, and authorization are the responsibility of the operator and the infrastructure being accessed (e.g., SSH server ACLs, sudoers policy, network device privilege levels). Operators must not run commands that print passwords, tokens, or private keys if they do not want those values returned to the MCP client.
 
 ### What This Means for Operators
 
