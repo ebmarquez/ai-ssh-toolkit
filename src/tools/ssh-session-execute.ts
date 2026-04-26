@@ -61,6 +61,8 @@ export async function sshSessionExecute(
       }
       if (exitDisposable) {
         try { exitDisposable.dispose(); } catch { /* ignore */ }
+        const eidx = sess.disposables.indexOf(exitDisposable);
+        if (eidx !== -1) sess.disposables.splice(eidx, 1);
         exitDisposable = undefined;
       }
       sess.inFlight = false;
@@ -101,9 +103,11 @@ export async function sshSessionExecute(
     sess.disposables.push(dataDisposable);
 
     // Listen for PTY exit (fast-fail instead of waiting for timeout)
+    // Also pushed to sess.disposables so SessionStore.delete/destroy cleans it up
     exitDisposable = sess.ptyProcess.onExit(({ exitCode }) => {
       fail(new Error(`SSH PTY exited unexpectedly with code ${exitCode} during command execution`));
     });
+    sess.disposables.push(exitDisposable);
 
     // Write the command to the PTY — wrap in try/catch so a dead PTY
     // doesn't leave inFlight=true and listeners dangling

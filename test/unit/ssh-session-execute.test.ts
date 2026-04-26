@@ -24,7 +24,10 @@ function makeFakePty(): IPty & { _triggerData: (d: string) => void; _triggerExit
       }) };
       return disposable;
     },
-    onExit(cb: (ev: { exitCode: number }) => void) { onExitCb = cb; },
+    onExit(cb: (ev: { exitCode: number }) => void) {
+      onExitCb = cb;
+      return { dispose: vi.fn(() => { onExitCb = null; }) };
+    },
     _triggerData(d: string) { for (const cb of [...onDataCbs]) cb(d); },
     _triggerExit(code: number) { onExitCb?.({ exitCode: code }); },
     pid: 1234,
