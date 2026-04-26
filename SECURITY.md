@@ -64,8 +64,6 @@ Endpoint security is not the responsibility of this tool. If a particular IP add
 
 **Status:** Won't fix / by design. This was a finding from a security review ([PR #23](https://github.com/ebmarquez/ai-ssh-toolkit/pull/23)) and was deliberately evaluated and rejected. The decision is documented here for the record. See [Issue #24](https://github.com/ebmarquez/ai-ssh-toolkit/issues/24).
 
-## Design Decisions
-
 ### `credential_list_backends` Is Intentionally Public
 
 **Decision:** Won't Fix / By Design

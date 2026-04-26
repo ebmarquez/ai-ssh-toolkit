@@ -16,7 +16,7 @@ export interface SshExecuteInput {
   platform?: PlatformHint;
   timeout_ms?: number;
   parse_output?: boolean;
-  platform_hint?: ParserPlatform;
+  platform_hint?: ParserPlatform | 'os10';
 }
 
 export interface SshExecuteResult {

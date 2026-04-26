@@ -6,7 +6,12 @@
  * and returns a structured JSON object (or null if parsing fails).
  */
 
-export type ParserPlatform = 'nxos' | 'dell-os10' | 'sonic' | 'auto';
+export type ParserPlatform = 'nxos' | 'dell-os10' | 'os10' | 'sonic' | 'auto';
+
+/** Normalize platform aliases so callers can pass 'os10' or 'dell-os10' interchangeably. */
+function normalizePlatform(platform: string): ParserPlatform {
+  return platform === 'os10' ? 'dell-os10' : (platform as ParserPlatform);
+}
 
 // ── BGP Summary ──────────────────────────────────────────────────────────────
 
@@ -372,7 +377,9 @@ export function parseShowVlan(
   }
 
   // Match: ID  Name  Status  [optional ports...]
-  const vlanLineRe = /^\s*(\d{1,4})\s+([\w-]+)\s+(active|inactive|Active|Inactive)\s*(.*)?$/;
+  // Name may contain spaces (e.g. "Voice VLAN", "Management VLAN") so use a lookahead
+  // to stop before the status keyword.
+  const vlanLineRe = /^\s*(\d{1,4})\s+(.+?)\s{2,}(active|inactive|Active|Inactive)\s*(.*)?$/
 
   for (let i = startIdx; i < lines.length; i++) {
     const m = vlanLineRe.exec(lines[i]);
@@ -386,11 +393,12 @@ export function parseShowVlan(
           ? portStr.split(/,\s*/).map((p) => p.trim()).filter(Boolean)
           : undefined,
       });
-    } else if (/^\s*\d{1,4}\s+[\w-]+\s*$/.test(lines[i])) {
-      // Dell OS10 may not have status column
-      const parts = lines[i].trim().split(/\s+/);
-      if (parts.length >= 2) {
-        vlans.push({ id: parts[0], name: parts[1] });
+    } else if (/^\s*\d{1,4}\s+\S/.test(lines[i])) {
+      // Dell OS10 may not have status column — capture full name (may include spaces)
+      const simpleLine = lines[i].trim();
+      const simpleMatch = /^(\d{1,4})\s+(.+?)\s*$/.exec(simpleLine);
+      if (simpleMatch) {
+        vlans.push({ id: simpleMatch[1], name: simpleMatch[2].trim() });
       }
     }
   }
@@ -416,24 +424,25 @@ type ParsedOutput =
 export function parseOutput(
   command: string,
   output: string,
-  platform: string
+  platform: ParserPlatform | string
 ): ParsedOutput | null {
+  const normalizedPlatform = normalizePlatform(platform);
   const cmd = command.trim().toLowerCase().replace(/\s+/g, ' ');
 
   if (cmd.includes('show ip bgp summary') || cmd.includes('show bgp summary')) {
-    return parseShowIpBgpSummary(output, platform);
+    return parseShowIpBgpSummary(output, normalizedPlatform);
   }
   if (cmd.includes('show interface status') || cmd.includes('show interfaces status')) {
-    return parseShowInterfaceStatus(output, platform);
+    return parseShowInterfaceStatus(output, normalizedPlatform);
   }
   if (cmd.includes('show lldp neighbor')) {
-    return parseShowLldpNeighbors(output, platform);
+    return parseShowLldpNeighbors(output, normalizedPlatform);
   }
   if (cmd === 'show version' || cmd.startsWith('show version ')) {
-    return parseShowVersion(output, platform);
+    return parseShowVersion(output, normalizedPlatform);
   }
   if (cmd === 'show vlan' || cmd.startsWith('show vlan ')) {
-    return parseShowVlan(output, platform);
+    return parseShowVlan(output, normalizedPlatform);
   }
 
   return null;
