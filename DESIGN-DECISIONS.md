@@ -62,7 +62,7 @@ If you need command-level restrictions, implement them at the infrastructure lay
 
 ### Rationale
 
-This tool is a general-purpose SSH MCP server. Restricting which hosts it can connect to would break legitimate use cases — for example, Azure Local uses the `169.254.x.x` (APIPA/link-local) range for cluster network validation. Blocking that range or any other would silently break real workflows for network engineers and cloud operators.
+This tool is a general-purpose SSH MCP server. Restricting which hosts it can connect to would break legitimate use cases across the diverse environments this tool is deployed in.
 
 Endpoint security is not the responsibility of this tool. If a particular IP address or range needs to be protected from unauthorized SSH connections, that protection belongs at the infrastructure layer — firewall rules, network segmentation, IAM policies, and endpoint hardening — not in the SSH client.
 
