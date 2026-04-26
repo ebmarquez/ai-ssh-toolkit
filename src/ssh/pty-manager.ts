@@ -93,7 +93,11 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
       term = pty.spawn('ssh', sshArgs, {
         name: 'xterm-color',
         cols: 220,
-        rows: 24,
+        // rows: 0 negotiates an "infinite" terminal height with the SSH server.
+        // Network devices (Cisco, Dell, Juniper, etc.) interpret this as
+        // disable paging — equivalent to 'terminal length 0' — so output is
+        // returned in full without --More-- interruptions.
+        rows: 0,
         env: childEnv,
       });
     } catch (err) {

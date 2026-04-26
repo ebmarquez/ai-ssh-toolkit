@@ -245,8 +245,10 @@ async function runSshCommands(opts: RunSshOptions): Promise<string> {
     const proc = pty.spawn("ssh", sshArgs, {
       name: "xterm-color",
       cols: 220,
-      rows: 40,
-      // Pass filtered env only — never expose full process.env to SSH children.
+      // rows: 0 negotiates an "infinite" terminal height with the SSH server.
+      // Network devices interpret this as disable paging so output is
+      // returned in full without --More-- interruptions.
+      rows: 0,
       env: childEnv,
     });
 
