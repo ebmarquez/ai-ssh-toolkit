@@ -68,6 +68,12 @@ describe('runSshSession', () => {
     const result = await promise;
     expect(result.exit_code).toBe(0);
     expect(typeof result.output).toBe('string');
+    // Verify rows:0 is passed to prevent --More-- pagination on network devices
+    expect(spawnMock).toHaveBeenCalledWith(
+      'ssh',
+      expect.any(Array),
+      expect.objectContaining({ rows: 0 }),
+    );
   });
 
   it('handles password prompt and sends password', async () => {
