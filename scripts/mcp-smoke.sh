@@ -11,15 +11,21 @@
 set -euo pipefail
 
 PKG_DIR="${1:?Usage: mcp-smoke.sh <install-prefix-dir>}"
-SERVER="${PKG_DIR}/node_modules/ai-ssh-toolkit/dist/index.js"
 
-if [[ ! -f "$SERVER" ]]; then
-  echo "FAIL: server entry point not found at ${SERVER}" >&2
+# Support both unscoped (ai-ssh-toolkit) and scoped (@ebmarquez/ai-ssh-toolkit) installs
+if [[ -f "${PKG_DIR}/node_modules/ai-ssh-toolkit/dist/index.js" ]]; then
+  SERVER="${PKG_DIR}/node_modules/ai-ssh-toolkit/dist/index.js"
+  PKG_JSON="${PKG_DIR}/node_modules/ai-ssh-toolkit/package.json"
+elif [[ -f "${PKG_DIR}/node_modules/@ebmarquez/ai-ssh-toolkit/dist/index.js" ]]; then
+  SERVER="${PKG_DIR}/node_modules/@ebmarquez/ai-ssh-toolkit/dist/index.js"
+  PKG_JSON="${PKG_DIR}/node_modules/@ebmarquez/ai-ssh-toolkit/package.json"
+else
+  echo "FAIL: server entry point not found in ${PKG_DIR}/node_modules/" >&2
   exit 1
 fi
 
 # Read expected version from the installed package.json
-EXPECTED_VERSION=$(node -e "console.log(require('${PKG_DIR}/node_modules/ai-ssh-toolkit/package.json').version)")
+EXPECTED_VERSION=$(node -e "console.log(require('${PKG_JSON}').version)")
 
 echo "==> MCP smoke test against ${SERVER}"
 echo "    Expected version: ${EXPECTED_VERSION}"

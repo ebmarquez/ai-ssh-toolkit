@@ -11,10 +11,14 @@
 set -euo pipefail
 
 PKG_DIR="${1:?Usage: bw-smoke.sh <install-prefix-dir>}"
-SERVER="${PKG_DIR}/node_modules/ai-ssh-toolkit/dist/index.js"
 
-if [[ ! -f "$SERVER" ]]; then
-  echo "FAIL: server entry point not found at ${SERVER}" >&2
+# Support both unscoped (ai-ssh-toolkit) and scoped (@ebmarquez/ai-ssh-toolkit) installs
+if [[ -f "${PKG_DIR}/node_modules/ai-ssh-toolkit/dist/index.js" ]]; then
+  SERVER="${PKG_DIR}/node_modules/ai-ssh-toolkit/dist/index.js"
+elif [[ -f "${PKG_DIR}/node_modules/@ebmarquez/ai-ssh-toolkit/dist/index.js" ]]; then
+  SERVER="${PKG_DIR}/node_modules/@ebmarquez/ai-ssh-toolkit/dist/index.js"
+else
+  echo "FAIL: server entry point not found in ${PKG_DIR}/node_modules/" >&2
   exit 1
 fi
 
