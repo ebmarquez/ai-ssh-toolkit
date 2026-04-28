@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/ebmarquez/ai-ssh-toolkit/compare/v0.2.3...v0.3.0) (2026-04-28)
+
+
+### Features
+
+* honor ~/.ssh/config via ssh -G (issue [#75](https://github.com/ebmarquez/ai-ssh-toolkit/issues/75)) ([674726f](https://github.com/ebmarquez/ai-ssh-toolkit/commit/674726f73bc38d244620ac738ee243a6c8570249))
+
 ## [0.2.0](https://github.com/ebmarquez/ai-ssh-toolkit/compare/v0.1.0...v0.2.0) (2026-04-19)
 
 
