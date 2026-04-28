@@ -14,6 +14,13 @@ export interface SshExecuteInput {
   credential_backend?: string;
   platform?: PlatformHint;
   timeout_ms?: number;
+  /**
+   * When true (default), resolve ~/.ssh/config for the given host alias so that
+   * ssh_config(5) directives (HostName, User, Port, IdentityFile, ProxyJump, etc.)
+   * are applied. Tool arguments always take precedence over config values.
+   * Set to false to bypass ssh config lookup entirely.
+   */
+  use_ssh_config?: boolean;
 }
 
 export interface SshExecuteResult {
@@ -70,17 +77,21 @@ export async function sshExecute(
     }
   }
 
-  if (!resolvedUsername) throw new Error('username is required (provide username or a credential_ref with a username)');
+  if (!resolvedUsername) {
+    // Don't throw here — pty-manager will attempt ssh config resolution first
+    // (if use_ssh_config is enabled) and throw with a better error message.
+  }
 
   // Run the PTY session
   try {
     const result = await runSshSession({
       host,
-      username: resolvedUsername,
+      username: resolvedUsername || undefined,
       password: passwordBuffer,
       command,
       platform,
       timeout_ms,
+      use_ssh_config: input.use_ssh_config ?? true,
     });
     return result;
   } finally {

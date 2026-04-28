@@ -6,6 +6,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { resolveSshBin } from '../utils/cli-resolver.js';
+import { resolveSshConfig } from '../ssh/ssh-config-reader.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -14,6 +15,13 @@ export interface SshCheckInput {
   port?: number;
   username?: string;
   timeout_ms?: number;
+  /**
+   * When true (default), resolve ~/.ssh/config for the given host alias so that
+   * ssh_config(5) directives (HostName, User, Port, IdentityFile, ProxyJump, etc.)
+   * are applied. Tool arguments always take precedence over config values.
+   * Set to false to bypass ssh config lookup entirely.
+   */
+  use_ssh_config?: boolean;
 }
 
 export interface SshCheckResult {
@@ -23,7 +31,18 @@ export interface SshCheckResult {
 }
 
 export async function sshCheckHost(input: SshCheckInput): Promise<SshCheckResult> {
-  const { host, port = 22, username, timeout_ms = 5000 } = input;
+  const { host, timeout_ms = 5000, use_ssh_config = true } = input;
+  let { port, username } = input;
+
+  if (use_ssh_config) {
+    const cfg = await resolveSshConfig(host);
+    if (cfg) {
+      port ??= cfg.port !== 22 ? cfg.port : undefined;
+      username ??= cfg.user;
+    }
+  }
+
+  const resolvedPort = port ?? 22;
 
   const sshBin = await resolveSshBin();
   const timeoutSec = Math.max(1, Math.ceil(timeout_ms / 1000));
@@ -34,7 +53,7 @@ export async function sshCheckHost(input: SshCheckInput): Promise<SshCheckResult
     '-o', 'BatchMode=yes',
     '-o', `ConnectTimeout=${timeoutSec}`,
     '-o', 'StrictHostKeyChecking=accept-new',
-    '-p', String(port),
+    '-p', String(resolvedPort),
     target,
     'exit',
   ];
