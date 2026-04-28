@@ -6,6 +6,12 @@
 import { describe, it, expect, vi, beforeEach, type MockInstance } from 'vitest';
 import type { PtySessionOptions } from '../../src/ssh/pty-manager.js';
 
+// ---- ssh-config-reader mock (return null — tests supply username explicitly) ---
+vi.mock('../../src/ssh/ssh-config-reader.js', () => ({
+  resolveSshConfig: vi.fn().mockResolvedValue(null),
+}));
+// -------------------------------------------------------------------------
+
 // ---- node-pty mock -------------------------------------------------------
 interface FakePtyHandlers {
   onData: (cb: (data: string) => void) => void;
@@ -58,8 +64,8 @@ describe('runSshSession', () => {
   it('returns output and exit_code on successful command', async () => {
     const promise = runSshSession(makeOpts());
 
-    // Let the dynamic import inside runSshSession resolve before interacting
-    await new Promise(r => setTimeout(r, 0));
+    // Let the config resolution + dynamic import inside runSshSession resolve
+    await new Promise(r => setTimeout(r, 20));
 
     // Simulate command output then exit
     fakeOnData!('eric@test-host:~$ ');
@@ -79,8 +85,8 @@ describe('runSshSession', () => {
   it('handles password prompt and sends password', async () => {
     const promise = runSshSession(makeOpts({ password: Buffer.from('mypassword') }));
 
-    // Let the dynamic import inside runSshSession resolve before interacting
-    await new Promise(r => setTimeout(r, 0));
+    // Let the config resolution + dynamic import inside runSshSession resolve
+    await new Promise(r => setTimeout(r, 20));
 
     // Simulate password prompt then shell prompt then exit
     fakeOnData!('Password: ');
@@ -112,8 +118,8 @@ describe('runSshSession', () => {
   it('scrubs ANSI escape sequences from output', async () => {
     const promise = runSshSession(makeOpts());
 
-    // Let the dynamic import inside runSshSession resolve before interacting
-    await new Promise(r => setTimeout(r, 0));
+    // Let the config resolution + dynamic import inside runSshSession resolve
+    await new Promise(r => setTimeout(r, 20));
 
     // Simulate output with ANSI codes
     fakeOnData!('\x1B[32mhello\x1B[0m\r\neric@test-host:~$ ');

@@ -9,16 +9,27 @@
 import { detectPasswordPrompt, detectPrompt, type PlatformHint } from './prompt-detector.js';
 import { scrubOutput } from './output-scrubber.js';
 import { SSH_PTY_OPTIONS } from './pty-options.js';
+import { resolveSshConfig } from './ssh-config-reader.js';
 
 export interface PtySessionOptions {
   host: string;
-  username: string;
+  /** SSH username. Optional when use_ssh_config is true and ~/.ssh/config provides a User. */
+  username?: string;
   /** Password as Buffer — zeroed by caller after this function resolves/rejects.
    *  Optional: omit when using SSH key / agent authentication. */
   password?: Buffer;
   command: string;
   platform?: PlatformHint;
   timeout_ms?: number;
+  /** SSH port override. When omitted, resolved from ~/.ssh/config or defaults to 22. */
+  port?: number;
+  /**
+   * When true (default), resolve ~/.ssh/config for the given host alias using
+   * `ssh -G <host>` and apply User, Port, IdentityFile, ProxyJump, etc. as
+   * defaults (tool arguments always take precedence).
+   * Set to false to skip config lookup entirely.
+   */
+  use_ssh_config?: boolean;
 }
 
 export interface PtySessionResult {
@@ -41,23 +52,49 @@ export interface PtySessionResult {
 export async function runSshSession(opts: PtySessionOptions): Promise<PtySessionResult> {
   const {
     host,
-    username,
     password,
     command,
     platform = 'auto',
     timeout_ms = 30000,
+    use_ssh_config = true,
   } = opts;
+
+  // ── SSH config resolution ─────────────────────────────────────────────────
+  // Resolve ~/.ssh/config for this host alias (handles Include, Match, patterns).
+  // Tool-provided values always override config values.
+  let resolvedUsername = opts.username;
+  let resolvedPort = opts.port;
+
+  if (use_ssh_config) {
+    const cfg = await resolveSshConfig(host);
+    if (cfg) {
+      // Apply config values only where the caller didn't provide an explicit value
+      resolvedUsername ??= cfg.user;
+      resolvedPort ??= cfg.port !== 22 ? cfg.port : undefined;
+    }
+  }
+
+  if (!resolvedUsername) {
+    throw new Error(
+      'username is required. Provide username, a credential_ref with a username, ' +
+      'or add a User directive to ~/.ssh/config for this host.',
+    );
+  }
 
   // Dynamic import to allow mocking in tests (matches ssh-multi-execute.ts pattern)
   const { default: pty } = await import('node-pty');
 
-  const sshArgs = [
+  // Build SSH args — pass the original host alias so SSH can apply its own
+  // config (HostName, IdentityFile, ProxyJump, Ciphers, etc.) naturally.
+  const sshArgs: string[] = [
     '-o', 'StrictHostKeyChecking=accept-new',
     '-o', 'NumberOfPasswordPrompts=1',
     '-o', 'ConnectTimeout=10',
-    `${username}@${host}`,
-    command,
   ];
+  if (resolvedPort !== undefined && resolvedPort !== 22) {
+    sshArgs.push('-p', String(resolvedPort));
+  }
+  sshArgs.push(`${resolvedUsername}@${host}`, command);
 
   // Build a filtered environment allowlist — never expose full process.env
   // to SSH child processes.
