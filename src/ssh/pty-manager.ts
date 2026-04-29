@@ -94,7 +94,7 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
   if (resolvedPort !== undefined && resolvedPort !== 22) {
     sshArgs.push('-p', String(resolvedPort));
   }
-  sshArgs.push(`${resolvedUsername}@${host}`, command);
+  sshArgs.push('--', `${resolvedUsername}@${host}`, command);
 
   // Build a filtered environment allowlist — never expose full process.env
   // to SSH child processes.

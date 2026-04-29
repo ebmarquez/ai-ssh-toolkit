@@ -48,7 +48,7 @@ export async function resolveSshConfig(host: string): Promise<SshConfigValues | 
   }
 
   try {
-    const { stdout } = await execFileAsync(sshBin, ['-G', host], {
+    const { stdout } = await execFileAsync(sshBin, ['-G', '--', host], {
       timeout: 5_000,
       // Never inherit parent env for security — only pass HOME so ssh can find ~/.ssh/config
       env: {

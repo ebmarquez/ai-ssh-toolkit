@@ -54,6 +54,7 @@ export async function sshCheckHost(input: SshCheckInput): Promise<SshCheckResult
     '-o', `ConnectTimeout=${timeoutSec}`,
     '-o', 'StrictHostKeyChecking=accept-new',
     '-p', String(resolvedPort),
+    '--',
     target,
     'exit',
   ];
