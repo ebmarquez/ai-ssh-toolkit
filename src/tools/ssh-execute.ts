@@ -77,10 +77,9 @@ export async function sshExecute(
     }
   }
 
-  if (!resolvedUsername) {
-    // Don't throw here — pty-manager will attempt ssh config resolution first
-    // (if use_ssh_config is enabled) and throw with a better error message.
-  }
+  // Don't throw here when resolvedUsername is empty — pty-manager will attempt
+  // ssh config resolution first (if use_ssh_config is enabled) and throw with
+  // a better error message if username resolution still fails.
 
   // Run the PTY session
   try {
