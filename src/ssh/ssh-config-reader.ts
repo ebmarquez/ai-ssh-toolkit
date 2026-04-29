@@ -96,7 +96,8 @@ function parseSshGOutput(output: string, originalHost: string): SshConfigValues 
   const user = get('user') || undefined;
 
   const portStr = get('port');
-  const port = portStr ? parseInt(portStr, 10) : 22;
+  const parsedPort = portStr ? parseInt(portStr, 10) : 22;
+  const port = Number.isFinite(parsedPort) && parsedPort >= 1 && parsedPort <= 65535 ? parsedPort : 22;
 
   // ssh -G may emit "identityfile none" when no identity is configured
   const identityFiles = getAll('identityfile').filter(f => f !== 'none' && f !== '');
@@ -110,9 +111,13 @@ function parseSshGOutput(output: string, originalHost: string): SshConfigValues 
     proxyCommand && proxyCommand.toLowerCase() !== 'none' ? proxyCommand : undefined;
 
   const connectTimeoutStr = get('connecttimeout');
-  const connectTimeout =
+  const parsedConnectTimeout =
     connectTimeoutStr && connectTimeoutStr !== '0'
       ? parseInt(connectTimeoutStr, 10)
+      : undefined;
+  const connectTimeout =
+    parsedConnectTimeout !== undefined && Number.isFinite(parsedConnectTimeout) && parsedConnectTimeout > 0
+      ? parsedConnectTimeout
       : undefined;
 
   return {
