@@ -106,6 +106,8 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
     'LANG',
     'LC_ALL',
     // SSH config / agent vars
+    // SSH_AUTH_SOCK is passed through so that ssh-agent credential backend
+    // works naturally — the SSH child connects to the agent for key signing.
     'SSH_AUTH_SOCK',
     'SSH_AGENT_PID',
     // Windows/platform-critical vars

@@ -272,6 +272,18 @@ credential_backend: "env"
 credential_ref: "MY_SWITCH"  → reads MY_SWITCH_USERNAME and MY_SWITCH_PASSWORD
 ```
 
+### SSH Agent
+
+Delegates authentication to a running ssh-agent. No passwords or key material are handled by the toolkit — the agent performs signing internally. Requires `SSH_AUTH_SOCK` to be set (or the OpenSSH named pipe on Windows) and at least one identity loaded.
+
+```text
+credential_backend: "ssh-agent"
+credential_ref: "admin"                    # username only
+credential_ref: "admin:SHA256:abc123..."   # username:fingerprint (select specific key)
+```
+
+The SSH child process inherits `SSH_AUTH_SOCK` automatically, so agent-based auth works without any additional configuration.
+
 ## Platform Support
 
 | Platform | SSH Client | PTY Type |

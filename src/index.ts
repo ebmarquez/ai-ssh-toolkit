@@ -33,6 +33,7 @@ import { BitwardenBackend } from './credentials/bitwarden.js';
 import { AzureKeyVaultBackend } from './credentials/azure-keyvault.js';
 import { EnvCredentialBackend } from './credentials/env.js';
 import { GoogleSecretManagerBackend } from './credentials/google-secret-manager.js';
+import { SshAgentBackend } from './credentials/ssh-agent.js';
 import { readFileSync } from 'fs';
 
 function getPackageVersion(): string {
@@ -61,6 +62,7 @@ registry.register(new BitwardenBackend());
 registry.register(new AzureKeyVaultBackend());
 registry.register(new EnvCredentialBackend());
 registry.register(new GoogleSecretManagerBackend());
+registry.register(new SshAgentBackend());
 
 const sessionStore = new SessionStore();
 
