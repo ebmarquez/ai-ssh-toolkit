@@ -151,18 +151,16 @@ describe('ssh_check_host', () => {
         return sock;
       });
 
-      // We test via tcpBannerProbe since sshCheckHost creates a real socket;
-      // for the default-mode assertion we verify that mode defaults to 'banner'
-      // by calling sshCheckHost with no mode and checking the result shape.
-      // But since we can't inject sockets into sshCheckHost directly, we
-      // verify indirectly that the mode field defaults correctly.
-      const input = { host: 'example.com', mode: undefined as undefined };
-      // sshCheckHost will try a real TCP connection which will fail in CI,
-      // but we can still verify it chose the right code path by checking
-      // the result status is tcp_unreachable (not auth_failed).
-      const result = await sshCheckHost(input, makeCredentialMap());
-      // In a test env with no real SSH server, TCP will fail
-      expect(['tcp_unreachable', 'ssh_banner_received']).toContain(result.status);
+      // Inject the fake socket factory so sshCheckHost never opens a real connection.
+      const result = await sshCheckHost(
+        { host: 'example.com' },
+        makeCredentialMap(),
+        () => sock as unknown as import('net').Socket,
+      );
+
+      expect(result.reachable).toBe(true);
+      expect(result.status).toBe('ssh_banner_received');
+      expect(result.banner).toBe('SSH-2.0-Test');
       expect(result.status).not.toBe('auth_failed');
       expect(result.status).not.toBe('auth_succeeded');
     });

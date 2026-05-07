@@ -188,7 +188,11 @@ async function authProbe(
   }
 }
 
-export async function sshCheckHost(input: SshCheckInput, credentialMap: CredentialMap): Promise<SshCheckResult> {
+export async function sshCheckHost(
+  input: SshCheckInput,
+  credentialMap: CredentialMap,
+  socketFactory?: () => net.Socket,
+): Promise<SshCheckResult> {
   const { host, timeout_ms = 5000, use_ssh_config = true, mode = 'banner' } = input;
   let { port, username } = input;
 
@@ -212,9 +216,9 @@ export async function sshCheckHost(input: SshCheckInput, credentialMap: Credenti
 
   switch (mode) {
     case 'tcp':
-      return tcpBannerProbe(host, resolvedPort, timeout_ms, false);
+      return tcpBannerProbe(host, resolvedPort, timeout_ms, false, socketFactory);
     case 'banner':
-      return tcpBannerProbe(host, resolvedPort, timeout_ms, true);
+      return tcpBannerProbe(host, resolvedPort, timeout_ms, true, socketFactory);
     case 'auth':
       return authProbe(host, resolvedPort, username, timeout_ms);
   }
