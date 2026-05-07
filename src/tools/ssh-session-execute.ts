@@ -9,17 +9,27 @@ import type { SessionStore, ManagedSession } from '../ssh/session-store.js';
 import type { IDisposable } from 'node-pty';
 import { detectPrompt } from '../ssh/prompt-detector.js';
 import { scrubOutput } from '../ssh/output-scrubber.js';
+import { applyOutputLimit } from '../utils/output-limiter.js';
 
 export interface SshSessionExecuteInput {
   session_id: string;
   command: string;
   timeout_ms?: number; // default 30000
+  /** Maximum output bytes before truncation (default: 65 536 = 64 KB). */
+  max_output_bytes?: number;
+  /** If provided, always write full output to this file path. */
+  output_to_file?: string;
 }
 
 export interface SshSessionExecuteResult {
   output: string;
   exit_code: number | null; // null for interactive sessions
   session_id: string;
+  truncated?: boolean;
+  total_bytes?: number;
+  head?: string;
+  tail?: string;
+  saved_path?: string;
 }
 
 export async function sshSessionExecute(
@@ -52,7 +62,7 @@ export async function sshSessionExecute(
 
   const sess = session; // capture for closure — TypeScript narrowing guard
 
-  return new Promise<SshSessionExecuteResult>((resolve, reject) => {
+  const base = await new Promise<SshSessionExecuteResult>((resolve, reject) => {
     let captureBuffer = '';
     let settled = false;
     let dataDisposable: IDisposable | undefined;
@@ -128,4 +138,12 @@ export async function sshSessionExecute(
       fail(new Error(`Failed to write to PTY: ${String(err)}`));
     }
   });
+
+  // Apply output limiting after PTY interaction completes
+  const limited = await applyOutputLimit(base.output, {
+    max_output_bytes: input.max_output_bytes,
+    output_to_file: input.output_to_file,
+  });
+
+  return { ...base, ...limited };
 }

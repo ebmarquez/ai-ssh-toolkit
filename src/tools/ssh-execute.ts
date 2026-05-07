@@ -6,6 +6,7 @@ import type { PlatformHint } from '../ssh/prompt-detector.js';
 import type { CredentialRegistry } from '../credentials/registry.js';
 import { runSshSession } from '../ssh/pty-manager.js';
 import type { CredentialMap } from '../credentials/credential-map.js';
+import { applyOutputLimit } from '../utils/output-limiter.js';
 
 export interface SshExecuteInput {
   host: string;
@@ -22,11 +23,20 @@ export interface SshExecuteInput {
    * Set to false to bypass ssh config lookup entirely.
    */
   use_ssh_config?: boolean;
+  /** Maximum output bytes before truncation (default: 65 536 = 64 KB). */
+  max_output_bytes?: number;
+  /** If provided, always write full output to this file path. */
+  output_to_file?: string;
 }
 
 export interface SshExecuteResult {
   output: string;
   exit_code: number | null;
+  truncated?: boolean;
+  total_bytes?: number;
+  head?: string;
+  tail?: string;
+  saved_path?: string;
 }
 
 export async function sshExecute(
@@ -107,7 +117,14 @@ export async function sshExecute(
       timeout_ms,
       use_ssh_config: input.use_ssh_config ?? true,
     });
-    return result;
+
+    // Apply output limiting
+    const limited = await applyOutputLimit(result.output, {
+      max_output_bytes: input.max_output_bytes,
+      output_to_file: input.output_to_file,
+    });
+
+    return { ...result, ...limited };
   } finally {
     // Zero-fill password buffer after PTY session completes (success or failure)
     passwordBuffer.fill(0);

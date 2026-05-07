@@ -91,6 +91,8 @@ server.tool(
       .describe('Platform hint for prompt detection (default: auto)'),
     timeout_ms: z.number().int().positive().optional().describe('Connection + command timeout in milliseconds (default: 30000)'),
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
+    max_output_bytes: z.number().int().positive().optional().describe('Maximum output size in bytes before truncation (default: 65536 = 64 KB). Output exceeding this limit is saved to a file and a head/tail preview is returned inline.'),
+    output_to_file: z.string().optional().describe('If provided, always write full output to this file path (plus return head/tail inline).'),
   },
   async (input) => {
     try {
@@ -238,6 +240,8 @@ server.tool(
     session_id: z.string().describe('Session ID returned by ssh_session_open'),
     command: z.string().describe('Command to execute in the session'),
     timeout_ms: z.number().int().positive().optional().describe('Command timeout in milliseconds (default: 30000)'),
+    max_output_bytes: z.number().int().positive().optional().describe('Maximum output size in bytes before truncation (default: 65536 = 64 KB). Output exceeding this limit is saved to a file and a head/tail preview is returned inline.'),
+    output_to_file: z.string().optional().describe('If provided, always write full output to this file path (plus return head/tail inline).'),
   },
   async (input) => {
     try {
