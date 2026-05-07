@@ -178,12 +178,13 @@ server.tool(
 // ── ssh_check_host ───────────────────────────────────────────────────────────
 server.tool(
   'ssh_check_host',
-  'Verify SSH connectivity to a host without executing commands.',
+  'Verify SSH host reachability via TCP connect, SSH banner probe (default), or full auth check.',
   {
     host: z.string().describe('Hostname or IP address to check'),
     port: z.number().int().min(1).max(65535).optional().describe('SSH port (default: 22, or from ~/.ssh/config)'),
     username: z.string().optional().describe('SSH username for the connectivity check'),
     timeout_ms: z.number().int().positive().optional().describe('Connection timeout in milliseconds (default: 5000)'),
+    mode: z.enum(['tcp', 'banner', 'auth']).optional().describe("Check mode: 'tcp' (TCP connect only), 'banner' (TCP + SSH banner read, default), 'auth' (full ssh binary auth with BatchMode=yes)"),
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
   },
   async (input) => {

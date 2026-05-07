@@ -78,12 +78,32 @@ No parameters required.
 
 ### `ssh_check_host`
 
-Check TCP reachability of a host with latency measurement.
+Check SSH host reachability via TCP connect, SSH banner probe, or full auth check.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `host` | string | ✅ | Hostname or IP |
 | `port` | number | ❌ | Port to check (default: 22) |
+| `username` | string | ❌ | SSH username for the check |
+| `timeout_ms` | number | ❌ | Connection timeout in ms (default: 5000) |
+| `mode` | string | ❌ | `'tcp'`, `'banner'` (default), or `'auth'` |
+| `use_ssh_config` | boolean | ❌ | Honor ~/.ssh/config (default: true) |
+
+**Modes:**
+
+- **`banner`** (default) — TCP connect + read SSH server banner. Works for password-auth hosts without false negatives.
+- **`tcp`** — TCP connect only (just checks the port is open).
+- **`auth`** — Full SSH auth attempt using `BatchMode=yes`. Returns `auth_succeeded` or `auth_failed`.
+
+**Response fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `reachable` | boolean | Whether the host was reachable |
+| `status` | string | `'tcp_unreachable'`, `'ssh_banner_received'`, `'auth_succeeded'`, or `'auth_failed'` |
+| `latency_ms` | number \| null | Round-trip latency (null if unreachable) |
+| `banner` | string? | SSH server banner (e.g. `'SSH-2.0-OpenSSH_8.9'`), only in banner mode |
+| `error` | string? | Error message when check fails |
 
 ---
 
