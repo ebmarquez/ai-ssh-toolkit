@@ -6,6 +6,8 @@ import type { PlatformHint } from '../ssh/prompt-detector.js';
 import type { CredentialRegistry } from '../credentials/registry.js';
 import { runSshSession } from '../ssh/pty-manager.js';
 import type { CredentialMap } from '../credentials/credential-map.js';
+import type { HostKeyStore } from '../security/host-key-store.js';
+import { verifyHostKey } from '../security/host-key-verify.js';
 
 export interface SshExecuteInput {
   host: string;
@@ -33,6 +35,7 @@ export async function sshExecute(
   registry: CredentialRegistry,
   input: SshExecuteInput,
   credentialMap: CredentialMap,
+  hostKeyStore?: HostKeyStore,
 ): Promise<SshExecuteResult> {
   let {
     credential_ref,
@@ -95,6 +98,11 @@ export async function sshExecute(
   // Don't throw here when resolvedUsername is empty — pty-manager will attempt
   // ssh config resolution first (if use_ssh_config is enabled) and throw with
   // a better error message if username resolution still fails.
+
+  // Host key verification (TOFU)
+  if (hostKeyStore) {
+    await verifyHostKey(hostKeyStore, host);
+  }
 
   // Run the PTY session
   try {
