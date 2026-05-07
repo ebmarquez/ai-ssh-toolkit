@@ -3,8 +3,6 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
-import os from 'os';
-import path from 'path';
 
 // ── SessionReuseManager unit tests ──────────────────────────────────────────
 
@@ -76,10 +74,8 @@ describe('SessionReuseManager', () => {
     const args = mgr.getControlMasterArgs();
     expect(args).toContain('-o');
     expect(args).toContain('ControlMaster=auto');
-    const cpIdx = args.indexOf('ControlMaster=auto');
     // ControlPath should reference the tmpdir-based path with SSH tokens
-    const controlPathArg = args[args.indexOf('ControlPath=', 0) !== -1 ? args.indexOf('ControlPath=', 0) : -1]
-      ?? args.find(a => a.startsWith('ControlPath='));
+    const controlPathArg = args.find(a => a.startsWith('ControlPath='));
     expect(controlPathArg).toBeDefined();
     expect(controlPathArg).toContain('ai-ssh-toolkit');
     expect(controlPathArg).toContain('cm-%h-%p-%r');
