@@ -27,6 +27,7 @@ import { sshMultiExecute } from './tools/ssh-multi-execute.js';
 import { credentialGet } from './tools/credential-get.js';
 import { credentialListBackends } from './tools/credential-list.js';
 import { sshCheckHost } from './tools/ssh-check.js';
+import { sshUpload, sshDownload, sshSftpList } from './tools/ssh-transfer.js';
 import { versionCheck } from './tools/version-check.js';
 import { credentialDiagnose } from './tools/credential-diagnose.js';
 import { CredentialRegistry } from './credentials/registry.js';
@@ -303,6 +304,87 @@ server.tool(
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ success: true, path: credentialMap.getFilePath() }) }],
       };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_upload ────────────────────────────────────────────────────────────────
+server.tool(
+  'ssh_upload',
+  'Upload a local file to a remote host via SFTP.',
+  {
+    host: z.string().describe('Hostname or IP address of the remote target'),
+    local_path: z.string().describe('Path to the local file to upload'),
+    remote_path: z.string().describe('Destination path on the remote host'),
+    username: z.string().optional().describe('SSH username (overrides credential ref username and ~/.ssh/config User)'),
+    credential_ref: z.string().optional().describe('Credential reference string understood by the selected backend'),
+    credential_backend: z.string().optional().describe('Name of the credential backend (default: google-secret-manager)'),
+    port: z.number().int().min(1).max(65535).optional().describe('SSH port (default: 22)'),
+    timeout_ms: z.number().int().positive().optional().describe('Transfer timeout in milliseconds (default: 30000)'),
+  },
+  async (input) => {
+    try {
+      const result = await sshUpload(registry, input, credentialMap);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_download ─────────────────────────────────────────────────────────────
+server.tool(
+  'ssh_download',
+  'Download a remote file to the local filesystem via SFTP.',
+  {
+    host: z.string().describe('Hostname or IP address of the remote target'),
+    remote_path: z.string().describe('Path to the file on the remote host'),
+    local_path: z.string().describe('Destination path on the local filesystem'),
+    username: z.string().optional().describe('SSH username (overrides credential ref username and ~/.ssh/config User)'),
+    credential_ref: z.string().optional().describe('Credential reference string understood by the selected backend'),
+    credential_backend: z.string().optional().describe('Name of the credential backend (default: google-secret-manager)'),
+    port: z.number().int().min(1).max(65535).optional().describe('SSH port (default: 22)'),
+    timeout_ms: z.number().int().positive().optional().describe('Transfer timeout in milliseconds (default: 30000)'),
+  },
+  async (input) => {
+    try {
+      const result = await sshDownload(registry, input, credentialMap);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_sftp_list ────────────────────────────────────────────────────────────
+server.tool(
+  'ssh_sftp_list',
+  'List remote directory contents via SFTP.',
+  {
+    host: z.string().describe('Hostname or IP address of the remote target'),
+    remote_path: z.string().describe('Path to the remote directory to list'),
+    recursive: z.boolean().optional().describe('When true, list directory contents recursively (default: false)'),
+    username: z.string().optional().describe('SSH username (overrides credential ref username and ~/.ssh/config User)'),
+    credential_ref: z.string().optional().describe('Credential reference string understood by the selected backend'),
+    credential_backend: z.string().optional().describe('Name of the credential backend (default: google-secret-manager)'),
+    port: z.number().int().min(1).max(65535).optional().describe('SSH port (default: 22)'),
+    timeout_ms: z.number().int().positive().optional().describe('Operation timeout in milliseconds (default: 30000)'),
+  },
+  async (input) => {
+    try {
+      const result = await sshSftpList(registry, input, credentialMap);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
