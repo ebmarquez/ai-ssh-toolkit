@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { parseKeyscanOutput, detectOsHint } from '../../src/security/host-key-scanner.js';
 
 // ── parseKeyscanOutput ──────────────────────────────────────────────────────

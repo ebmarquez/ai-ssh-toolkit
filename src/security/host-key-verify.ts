@@ -30,6 +30,7 @@ export async function verifyHostKey(
         `Host key verification failed for ${host}:${port}: unable to scan live keys ` +
         `(${err instanceof Error ? err.message : String(err)}). ` +
         'Pinned keys exist — refusing connection for safety.',
+        { cause: err },
       );
     }
     // No pinned keys and can't scan → skip verification (first-use scenario

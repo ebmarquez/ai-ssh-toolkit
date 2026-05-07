@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import {
   HostKeyStore,
@@ -206,9 +206,7 @@ describe('HostKeyStore', () => {
   // ── Corrupt file handling ─────────────────────────────────────────────────
 
   it('handles corrupt JSON file gracefully', () => {
-    const { writeFileSync, mkdirSync } = require('fs');
-    const { dirname } = require('path');
-    mkdirSync(dirname(storePath), { recursive: true });
+        mkdirSync(dirname(storePath), { recursive: true });
     writeFileSync(storePath, 'NOT VALID JSON!!!');
 
     const store = new HostKeyStore(storePath);
