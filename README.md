@@ -285,11 +285,19 @@ credential_ref: "my-vault/my-secret"
 
 ### Environment Variables
 
-Read credentials from environment variables. Reference by variable name prefix.
+Read credentials from environment variables. Three ref formats are supported:
 
 ```text
 credential_backend: "env"
-credential_ref: "MY_SWITCH"  → reads MY_SWITCH_USERNAME and MY_SWITCH_PASSWORD
+
+# Password-only (username from the tool's username arg):
+credential_ref: "SWITCH_PASS"
+
+# Named keys (recommended):
+credential_ref: "user=SWITCH_USER,pass=SWITCH_PASS"
+
+# Legacy colon format (backwards compatible):
+credential_ref: "SWITCH_USER:SWITCH_PASS"
 ```
 
 ### SSH Agent
