@@ -36,6 +36,7 @@ import { AzureKeyVaultBackend } from './credentials/azure-keyvault.js';
 import { EnvCredentialBackend } from './credentials/env.js';
 import { GoogleSecretManagerBackend } from './credentials/google-secret-manager.js';
 import { SshAgentBackend } from './credentials/ssh-agent.js';
+import { SessionReuseManager, getSessionReuseTtl } from './ssh/session-reuse.js';
 import { readFileSync } from 'fs';
 
 function getPackageVersion(): string {
@@ -68,6 +69,7 @@ registry.register(new SshAgentBackend());
 
 const sessionStore = new SessionStore();
 const credentialMap = new CredentialMap();
+const reuseManager = new SessionReuseManager(getSessionReuseTtl());
 
 // Graceful shutdown: destroy all sessions before exiting
 const shutdown = () => { sessionStore.destroy(); process.exit(0); };
@@ -91,10 +93,11 @@ server.tool(
       .describe('Platform hint for prompt detection (default: auto)'),
     timeout_ms: z.number().int().positive().optional().describe('Connection + command timeout in milliseconds (default: 30000)'),
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
+    reuse_session: z.boolean().optional().describe('When true, reuse an existing SSH ControlMaster connection if available. When false, force a fresh connection. Default follows AI_SSH_SESSION_REUSE_TTL_SECONDS config.'),
   },
   async (input) => {
     try {
-      const result = await sshExecute(registry, input, credentialMap);
+      const result = await sshExecute(registry, input, credentialMap, reuseManager);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {

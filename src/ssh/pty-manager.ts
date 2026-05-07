@@ -30,6 +30,8 @@ export interface PtySessionOptions {
    * Set to false to skip config lookup entirely.
    */
   use_ssh_config?: boolean;
+  /** Extra SSH CLI args (e.g. ControlMaster options) prepended to the arg list. */
+  extraSshArgs?: string[];
 }
 
 export interface PtySessionResult {
@@ -57,6 +59,7 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
     platform = 'auto',
     timeout_ms = 30000,
     use_ssh_config = true,
+    extraSshArgs = [],
   } = opts;
 
   // ── SSH config resolution ─────────────────────────────────────────────────
@@ -87,6 +90,7 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
   // Build SSH args — pass the original host alias so SSH can apply its own
   // config (HostName, IdentityFile, ProxyJump, Ciphers, etc.) naturally.
   const sshArgs: string[] = [
+    ...extraSshArgs,
     '-o', 'StrictHostKeyChecking=accept-new',
     '-o', 'NumberOfPasswordPrompts=1',
     '-o', 'ConnectTimeout=10',

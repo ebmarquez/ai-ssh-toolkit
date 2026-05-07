@@ -6,6 +6,7 @@ import type { PlatformHint } from '../ssh/prompt-detector.js';
 import type { CredentialRegistry } from '../credentials/registry.js';
 import { runSshSession } from '../ssh/pty-manager.js';
 import type { CredentialMap } from '../credentials/credential-map.js';
+import type { SessionReuseManager } from '../ssh/session-reuse.js';
 
 export interface SshExecuteInput {
   host: string;
@@ -22,6 +23,12 @@ export interface SshExecuteInput {
    * Set to false to bypass ssh config lookup entirely.
    */
   use_ssh_config?: boolean;
+  /**
+   * When true, reuse an existing SSH ControlMaster connection if available.
+   * When false, force a fresh connection. When undefined, follows the
+   * AI_SSH_SESSION_REUSE_TTL_SECONDS config (enabled by default).
+   */
+  reuse_session?: boolean;
 }
 
 export interface SshExecuteResult {
@@ -33,6 +40,7 @@ export async function sshExecute(
   registry: CredentialRegistry,
   input: SshExecuteInput,
   credentialMap: CredentialMap,
+  reuseManager?: SessionReuseManager,
 ): Promise<SshExecuteResult> {
   let {
     credential_ref,
@@ -96,6 +104,12 @@ export async function sshExecute(
   // ssh config resolution first (if use_ssh_config is enabled) and throw with
   // a better error message if username resolution still fails.
 
+  // Determine whether to use session reuse (ControlMaster)
+  const useReuse = input.reuse_session ?? (reuseManager?.isEnabled() ?? false);
+  const extraSshArgs = (useReuse && reuseManager)
+    ? reuseManager.getControlMasterArgs()
+    : [];
+
   // Run the PTY session
   try {
     const result = await runSshSession({
@@ -106,7 +120,14 @@ export async function sshExecute(
       platform,
       timeout_ms,
       use_ssh_config: input.use_ssh_config ?? true,
+      extraSshArgs,
     });
+
+    // Record successful connection for future reuse
+    if (useReuse && reuseManager && resolvedUsername) {
+      reuseManager.recordActivity(host, resolvedUsername);
+    }
+
     return result;
   } finally {
     // Zero-fill password buffer after PTY session completes (success or failure)
