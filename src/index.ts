@@ -36,6 +36,11 @@ import { AzureKeyVaultBackend } from './credentials/azure-keyvault.js';
 import { EnvCredentialBackend } from './credentials/env.js';
 import { GoogleSecretManagerBackend } from './credentials/google-secret-manager.js';
 import { SshAgentBackend } from './credentials/ssh-agent.js';
+import { OnePasswordBackend } from './credentials/onepassword.js';
+import { HashiCorpVaultBackend } from './credentials/hashicorp-vault.js';
+import { AwsSecretsManagerBackend } from './credentials/aws-secretsmanager.js';
+import { MacOsKeychainBackend } from './credentials/macos-keychain.js';
+import { WindowsCredentialBackend } from './credentials/windows-credential.js';
 import { readFileSync } from 'fs';
 
 function getPackageVersion(): string {
@@ -65,6 +70,11 @@ registry.register(new AzureKeyVaultBackend());
 registry.register(new EnvCredentialBackend());
 registry.register(new GoogleSecretManagerBackend());
 registry.register(new SshAgentBackend());
+registry.register(new OnePasswordBackend());
+registry.register(new HashiCorpVaultBackend());
+registry.register(new AwsSecretsManagerBackend());
+registry.register(new MacOsKeychainBackend());
+registry.register(new WindowsCredentialBackend());
 
 const sessionStore = new SessionStore();
 const credentialMap = new CredentialMap();
