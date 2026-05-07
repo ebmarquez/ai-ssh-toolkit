@@ -24,7 +24,9 @@ jobs:
           cache: npm
 
       - name: Azure Login (OIDC)
+        id: azure-login
         uses: azure/login@8c334a195cbb38e46038007b304988d888bf676a # v2.0.0
+        continue-on-error: true
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -38,6 +40,7 @@ jobs:
 
       - name: Run Azure KV integration tests
         env:
-          AZURE_KV_ENABLED: 'true'
+          # Only enable KV tests when Azure login succeeded (secrets available)
+          AZURE_KV_ENABLED: ${{ steps.azure-login.outcome == 'success' && 'true' || 'false' }}
           AZURE_KV_NAME: ${{ secrets.AZURE_KV_NAME }}
         run: npx vitest run test/integration/azure-keyvault.integration.test.ts
