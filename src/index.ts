@@ -28,6 +28,7 @@ import { credentialGet } from './tools/credential-get.js';
 import { credentialListBackends } from './tools/credential-list.js';
 import { sshCheckHost } from './tools/ssh-check.js';
 import { versionCheck } from './tools/version-check.js';
+import { credentialDiagnose } from './tools/credential-diagnose.js';
 import { CredentialRegistry } from './credentials/registry.js';
 import { BitwardenBackend } from './credentials/bitwarden.js';
 import { AzureKeyVaultBackend } from './credentials/azure-keyvault.js';
@@ -258,6 +259,26 @@ server.tool(
   async (input) => {
     try {
       const result = await sshSessionClose(sessionStore, input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── credential_diagnose ──────────────────────────────────────────────────────
+server.tool(
+  'credential_diagnose',
+  'Diagnose credential map resolution for a given host. Shows which rule matched and whether the backend is available.',
+  {
+    host: z.string().describe('Hostname or IP address to diagnose credential resolution for'),
+  },
+  async (input) => {
+    try {
+      const result = await credentialDiagnose(registry, input);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {

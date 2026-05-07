@@ -284,6 +284,48 @@ credential_ref: "admin:SHA256:abc123..."   # username:fingerprint (select specif
 
 The SSH child process inherits `SSH_AUTH_SOCK` automatically, so agent-based auth works without any additional configuration.
 
+## Credential Map
+
+The credential map provides automatic host→credential resolution so you don't need to specify `credential_backend` and `credential_ref` on every tool call.
+
+### Configuration
+
+Create a JSON file at:
+
+- **Linux/macOS:** `~/.config/ai-ssh-toolkit/credential-map.json`
+- **Windows:** `%APPDATA%\ai-ssh-toolkit\credential-map.json`
+
+### Format
+
+```json
+{
+  "rules": [
+    { "match": "*.prod.example.com", "backend": "bitwarden", "ref": "af83b31a", "username": "admin" },
+    { "match": "build-*", "backend": "ssh-agent" },
+    { "match": "10.218.191.*", "backend": "env", "ref": "SWITCH_USER:SWITCH_PASS" },
+    { "match_regex": "^db-\\d+\\.internal$", "match": "*", "backend": "bitwarden", "ref": "db-cred" },
+    { "match": "*", "backend": "ssh-agent" }
+  ]
+}
+```
+
+### Rule fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `match` | Yes | Glob pattern (`*` matches anything, `?` matches one char) |
+| `match_regex` | No | If present, used as a regex instead of the glob pattern |
+| `backend` | Yes | Credential backend name (bitwarden, azure-keyvault, env, google-secret-manager, ssh-agent) |
+| `ref` | No | Credential reference string passed to the backend |
+| `username` | No | SSH username override |
+
+### Behavior
+
+- **First-match-wins:** rules are evaluated top-to-bottom; the first match is used.
+- **Tool arguments override:** explicit `credential_backend`/`credential_ref` in tool calls always take precedence over the map.
+- **Missing file = no-op:** if the config file doesn't exist, tools continue with existing behavior (no credentials).
+- **Diagnostics:** use the `credential_diagnose` tool to test which rule matches a given host.
+
 ## Platform Support
 
 | Platform | SSH Client | PTY Type |
