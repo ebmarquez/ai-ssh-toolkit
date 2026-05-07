@@ -5,6 +5,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { MockInstance } from 'vitest';
 
+// ---- ssh-config-reader mock (return null — tests supply username explicitly) ---
+vi.mock('../../src/ssh/ssh-config-reader.js', () => ({
+  resolveSshConfig: vi.fn().mockResolvedValue(null),
+}));
+// -------------------------------------------------------------------------
+
 // ---- node-pty mock -------------------------------------------------------
 interface FakePtyHandlers {
   onData: (cb: (data: string) => void) => { dispose: ReturnType<typeof vi.fn> };
@@ -69,8 +75,8 @@ describe('sshSessionOpen', () => {
       timeout_ms: 5000,
     });
 
-    // Let dynamic import resolve
-    await new Promise(r => setTimeout(r, 0));
+    // Let config resolution + dynamic import resolve
+    await new Promise(r => setTimeout(r, 20));
 
     // Simulate shell prompt appearing
     fakeOnData!('eric@test-host:~$ ');
@@ -100,7 +106,7 @@ describe('sshSessionOpen', () => {
       timeout_ms: 5000,
     });
 
-    await new Promise(r => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 20));
 
     // Simulate password prompt, then shell prompt
     fakeOnData!('Password: ');
@@ -141,7 +147,7 @@ describe('sshSessionOpen', () => {
       timeout_ms: 5000,
     });
 
-    await new Promise(r => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 20));
 
     // PTY exits before we see a prompt
     fakeOnExit!({ exitCode: 255 });

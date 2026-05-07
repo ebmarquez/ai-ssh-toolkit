@@ -77,7 +77,7 @@ server.tool(
   {
     host: z.string().describe('Hostname or IP address of the remote target'),
     command: z.string().describe('Command to execute on the remote host'),
-    username: z.string().optional().describe('SSH username (overrides credential ref username)'),
+    username: z.string().optional().describe('SSH username (overrides credential ref username and ~/.ssh/config User)'),
     credential_ref: z.string().optional().describe('Credential reference string understood by the selected backend'),
     credential_backend: z.string().optional().describe('Name of the credential backend (default: google-secret-manager)'),
     platform: z
@@ -85,6 +85,7 @@ server.tool(
       .optional()
       .describe('Platform hint for prompt detection (default: auto)'),
     timeout_ms: z.number().int().positive().optional().describe('Connection + command timeout in milliseconds (default: 30000)'),
+    use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
   },
   async (input) => {
     try {
@@ -175,9 +176,10 @@ server.tool(
   'Verify SSH connectivity to a host without executing commands.',
   {
     host: z.string().describe('Hostname or IP address to check'),
-    port: z.number().int().min(1).max(65535).optional().describe('SSH port (default: 22)'),
+    port: z.number().int().min(1).max(65535).optional().describe('SSH port (default: 22, or from ~/.ssh/config)'),
     username: z.string().optional().describe('SSH username for the connectivity check'),
     timeout_ms: z.number().int().positive().optional().describe('Connection timeout in milliseconds (default: 5000)'),
+    use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
   },
   async (input) => {
     try {
@@ -198,7 +200,7 @@ server.tool(
   'Open a persistent interactive SSH shell session. Returns a session_id for use with ssh_session_execute and ssh_session_close.',
   {
     host: z.string().describe('Hostname or IP address of the remote target'),
-    username: z.string().optional().describe('SSH username (overrides credential ref username)'),
+    username: z.string().optional().describe('SSH username (overrides credential ref username and ~/.ssh/config User)'),
     credential_ref: z.string().optional().describe('Credential reference string understood by the selected backend'),
     credential_backend: z.string().optional().describe('Name of the credential backend (default: google-secret-manager)'),
     platform: z
@@ -207,6 +209,7 @@ server.tool(
       .describe('Platform hint for prompt detection (default: auto)'),
     timeout_ms: z.number().int().positive().optional().describe('Connect + initial prompt timeout in milliseconds (default: 30000)'),
     idle_timeout_ms: z.number().int().positive().optional().describe('Inactivity auto-close timeout in milliseconds (default: 300000)'),
+    use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
   },
   async (input) => {
     try {

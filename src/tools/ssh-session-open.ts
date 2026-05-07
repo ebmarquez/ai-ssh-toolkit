@@ -11,6 +11,7 @@ import type { CredentialRegistry } from '../credentials/registry.js';
 import type { SessionStore } from '../ssh/session-store.js';
 import { detectPasswordPrompt, detectPrompt } from '../ssh/prompt-detector.js';
 import { SSH_PTY_OPTIONS } from '../ssh/pty-options.js';
+import { resolveSshConfig } from '../ssh/ssh-config-reader.js';
 
 export interface SshSessionOpenInput {
   host: string;
@@ -20,6 +21,13 @@ export interface SshSessionOpenInput {
   platform?: PlatformHint;
   timeout_ms?: number;      // connect + initial prompt timeout (default: 30000)
   idle_timeout_ms?: number; // inactivity auto-close passed to SessionStore (default: 300000)
+  /**
+   * When true (default), resolve ~/.ssh/config for the given host alias so that
+   * ssh_config(5) directives (HostName, User, Port, IdentityFile, ProxyJump, etc.)
+   * are applied. Tool arguments always take precedence over config values.
+   * Set to false to bypass ssh config lookup entirely.
+   */
+  use_ssh_config?: boolean;
 }
 
 export interface SshSessionOpenResult {
@@ -42,6 +50,7 @@ export async function sshSessionOpen(
     platform = 'auto',
     timeout_ms = 30_000,
     idle_timeout_ms,
+    use_ssh_config = true,
   } = input;
 
   if (!host) throw new Error('host is required');
@@ -70,9 +79,23 @@ export async function sshSessionOpen(
     }
   }
 
+  // ── SSH config resolution ───────────────────────────────────────────────
+  // Resolve ~/.ssh/config for this host alias before spawning the PTY.
+  // Tool-provided values always win; config fills in what was not supplied.
+  let resolvedPort: number | undefined;
+
+  if (use_ssh_config) {
+    const cfg = await resolveSshConfig(host);
+    if (cfg) {
+      if (!resolvedUsername) resolvedUsername = cfg.user ?? '';
+      if (cfg.port !== 22) resolvedPort = cfg.port;
+    }
+  }
+
   if (!resolvedUsername) {
     throw new Error(
-      'username is required (provide username or a credential_ref with a username)',
+      'username is required. Provide username, a credential_ref with a username, ' +
+      'or add a User directive to ~/.ssh/config for this host.',
     );
   }
 
@@ -94,14 +117,17 @@ export async function sshSessionOpen(
   childEnv.TERM ??= 'xterm-color';
 
   // ── Spawn interactive shell (no command in argv → opens a shell) ──────────
-  const sshArgs = [
+  // Pass the original host alias — SSH applies its own config (HostName, IdentityFile, ProxyJump, etc.)
+  const sshArgs: string[] = [
     '-tt',
     '-o', 'StrictHostKeyChecking=accept-new',
     '-o', 'NumberOfPasswordPrompts=1',
     '-o', 'ConnectTimeout=10',
-    `${resolvedUsername}@${host}`,
-    // Intentionally no command — we want an interactive shell
   ];
+  if (resolvedPort !== undefined && resolvedPort !== 22) {
+    sshArgs.push('-p', String(resolvedPort));
+  }
+  sshArgs.push(`${resolvedUsername}@${host}`);
 
   return new Promise<SshSessionOpenResult>((resolve, reject) => {
     let term: import('node-pty').IPty;
