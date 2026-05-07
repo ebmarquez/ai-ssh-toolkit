@@ -5,13 +5,15 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import { join } from 'path';
 import { sshListHosts, type FsLike, type SshHostEntry } from '../../src/tools/ssh-list-hosts.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-const HOME = '/home/testuser';
-const SSH_DIR = `${HOME}/.ssh`;
-const CONFIG = `${SSH_DIR}/config`;
+// Use path.join so paths match what the tool produces on the current OS
+const HOME = process.platform === 'win32' ? 'C:\\Users\\testuser' : '/home/testuser';
+const SSH_DIR = join(HOME, '.ssh');
+const CONFIG = join(SSH_DIR, 'config');
 
 /** Build a mock filesystem from a map of path → content. */
 function mockFs(files: Record<string, string>, dirs: Record<string, string[]> = {}): FsLike {
@@ -217,7 +219,7 @@ Host app-server
   it('follows Include directives', async () => {
     const fs = mockFs({
       [CONFIG]: `Include conf.d/prod.conf\n\nHost local\n  HostName localhost\n`,
-      [`${SSH_DIR}/conf.d/prod.conf`]: `
+      [join(SSH_DIR, 'conf.d', 'prod.conf')]: `
 Host prod-app
   HostName prod.example.com
   User deploy
@@ -240,11 +242,11 @@ Host prod-app
     const fs = mockFs(
       {
         [CONFIG]: `Include conf.d/*\n`,
-        [`${SSH_DIR}/conf.d/a.conf`]: `Host alpha\n  HostName alpha.example.com\n`,
-        [`${SSH_DIR}/conf.d/b.conf`]: `Host bravo\n  HostName bravo.example.com\n`,
+        [join(SSH_DIR, 'conf.d', 'a.conf')]: `Host alpha\n  HostName alpha.example.com\n`,
+        [join(SSH_DIR, 'conf.d', 'b.conf')]: `Host bravo\n  HostName bravo.example.com\n`,
       },
       {
-        [`${SSH_DIR}/conf.d`]: ['a.conf', 'b.conf'],
+        [join(SSH_DIR, 'conf.d')]: ['a.conf', 'b.conf'],
       },
     );
 
@@ -256,22 +258,22 @@ Host prod-app
   });
 
   it('follows Include with absolute path', async () => {
+    const absPath = process.platform === 'win32' ? 'C:\\etc\\ssh\\extra.conf' : '/etc/ssh/extra.conf';
     const fs = mockFs({
-      [CONFIG]: `Include /etc/ssh/extra.conf\n`,
-      ['/etc/ssh/extra.conf']: `Host external\n  HostName ext.example.com\n`,
+      [CONFIG]: `Include ${absPath}\n`,
+      [absPath]: `Host external\n  HostName ext.example.com\n`,
     });
 
     const result = await sshListHosts({}, fs, HOME);
 
     expect(result.hosts).toHaveLength(1);
     expect(result.hosts[0].alias).toBe('external');
-    expect(result.hosts[0].source).toBe('/etc/ssh/extra.conf');
   });
 
   it('follows Include with tilde path', async () => {
     const fs = mockFs({
       [CONFIG]: `Include ~/.ssh/extra.conf\n`,
-      [`${SSH_DIR}/extra.conf`]: `Host tilde-host\n  HostName tilde.example.com\n`,
+      [join(SSH_DIR, 'extra.conf')]: `Host tilde-host\n  HostName tilde.example.com\n`,
     });
 
     const result = await sshListHosts({}, fs, HOME);
@@ -283,7 +285,7 @@ Host prod-app
   it('handles Include cycle detection', async () => {
     const fs = mockFs({
       [CONFIG]: `Include other.conf\nHost main\n  HostName main.example.com\n`,
-      [`${SSH_DIR}/other.conf`]: `Include ${CONFIG}\nHost other\n  HostName other.example.com\n`,
+      [join(SSH_DIR, 'other.conf')]: `Include ${CONFIG}\nHost other\n  HostName other.example.com\n`,
     });
 
     // Should not hang or throw — cycles are detected

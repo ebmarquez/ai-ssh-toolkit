@@ -7,7 +7,7 @@
  */
 
 import { readFile, readdir, realpath } from 'fs/promises';
-import { join, dirname, resolve, isAbsolute } from 'path';
+import { join, dirname, isAbsolute } from 'path';
 import { homedir } from 'os';
 
 // ── Types ───────────────────────────────────────────────────────────────────
