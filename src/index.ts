@@ -91,6 +91,7 @@ server.tool(
       .describe('Platform hint for prompt detection (default: auto)'),
     timeout_ms: z.number().int().positive().optional().describe('Connection + command timeout in milliseconds (default: 30000)'),
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
+    dry_run: z.boolean().optional().describe('When true, resolve host/credentials/args but do NOT connect. Returns a preview of the SSH invocation.'),
   },
   async (input) => {
     try {
@@ -216,6 +217,7 @@ server.tool(
     timeout_ms: z.number().int().positive().optional().describe('Connect + initial prompt timeout in milliseconds (default: 30000)'),
     idle_timeout_ms: z.number().int().positive().optional().describe('Inactivity auto-close timeout in milliseconds (default: 300000)'),
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
+    dry_run: z.boolean().optional().describe('When true, resolve host/credentials/args but do NOT connect. Returns a preview of the SSH invocation.'),
   },
   async (input) => {
     try {
