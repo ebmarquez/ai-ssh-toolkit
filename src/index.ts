@@ -28,6 +28,7 @@ import { credentialGet } from './tools/credential-get.js';
 import { credentialListBackends } from './tools/credential-list.js';
 import { sshCheckHost } from './tools/ssh-check.js';
 import { versionCheck } from './tools/version-check.js';
+import { sshListHosts } from './tools/ssh-list-hosts.js';
 import { credentialDiagnose } from './tools/credential-diagnose.js';
 import { CredentialRegistry } from './credentials/registry.js';
 import { CredentialMap } from './credentials/credential-map.js';
@@ -303,6 +304,26 @@ server.tool(
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ success: true, path: credentialMap.getFilePath() }) }],
       };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_list_hosts ───────────────────────────────────────────────────────────
+server.tool(
+  'ssh_list_hosts',
+  'List SSH host aliases from ~/.ssh/config (including Include directives). Returns a sanitized inventory with alias, hostname, user, port, and source file.',
+  {
+    pattern: z.string().optional().describe('Glob pattern to filter host aliases (e.g. "prod-*")'),
+  },
+  async (input) => {
+    try {
+      const result = await sshListHosts(input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
