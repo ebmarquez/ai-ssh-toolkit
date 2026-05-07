@@ -1,4 +1,4 @@
-import type { CredentialBackend, CredentialMetadata, CredentialResult, HealthCheckResult } from './backend.js';
+import type { CredentialBackend, CredentialMetadata, CredentialResult } from './backend.js';
 
 export type { HealthCheckResult } from './backend.js';
 
