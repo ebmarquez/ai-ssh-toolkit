@@ -6,6 +6,7 @@ import type { PlatformHint } from '../ssh/prompt-detector.js';
 import type { CredentialRegistry } from '../credentials/registry.js';
 import { runSshSession } from '../ssh/pty-manager.js';
 import type { CredentialMap } from '../credentials/credential-map.js';
+import type { StreamStore } from '../ssh/stream-store.js';
 
 export interface SshExecuteInput {
   host: string;
@@ -22,6 +23,8 @@ export interface SshExecuteInput {
    * Set to false to bypass ssh config lookup entirely.
    */
   use_ssh_config?: boolean;
+  /** When true, run the command asynchronously and return a stream_id for polling. */
+  stream?: boolean;
 }
 
 export interface SshExecuteResult {
@@ -29,11 +32,17 @@ export interface SshExecuteResult {
   exit_code: number | null;
 }
 
+export interface SshExecuteStreamResult {
+  stream_id: string;
+  status: 'running';
+}
+
 export async function sshExecute(
   registry: CredentialRegistry,
   input: SshExecuteInput,
   credentialMap: CredentialMap,
-): Promise<SshExecuteResult> {
+  streamStore?: StreamStore,
+): Promise<SshExecuteResult | SshExecuteStreamResult> {
   let {
     credential_ref,
     credential_backend,
@@ -44,6 +53,7 @@ export async function sshExecute(
     username,
     platform = 'auto',
     timeout_ms = 30000,
+    stream = false,
   } = input;
 
   // Validate required inputs before any lookups
@@ -97,6 +107,36 @@ export async function sshExecute(
   // a better error message if username resolution still fails.
 
   // Run the PTY session
+  if (stream && streamStore) {
+    const streamId = crypto.randomUUID();
+    const abortController = new AbortController();
+    streamStore.create(streamId, host, command, () => abortController.abort());
+
+    // Use a longer default timeout for streaming (5 minutes)
+    const effectiveTimeout = input.timeout_ms ?? 300_000;
+
+    const promise = runSshSession({
+      host,
+      username: resolvedUsername || undefined,
+      password: passwordBuffer,
+      command,
+      platform,
+      timeout_ms: effectiveTimeout,
+      use_ssh_config: input.use_ssh_config ?? true,
+      onData: (data) => streamStore.appendChunk(streamId, data, 'stdout'),
+      abortSignal: abortController.signal,
+    });
+
+    // Handle completion/failure in the background; clean up password
+    promise
+      .then((result) => streamStore.complete(streamId, result.exit_code))
+      .catch((err) => streamStore.fail(streamId, err instanceof Error ? err.message : String(err)))
+      .finally(() => passwordBuffer.fill(0));
+
+    return { stream_id: streamId, status: 'running' as const };
+  }
+
+  // Non-streaming path (unchanged)
   try {
     const result = await runSshSession({
       host,

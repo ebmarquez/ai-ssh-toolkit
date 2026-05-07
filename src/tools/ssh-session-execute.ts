@@ -9,11 +9,14 @@ import type { SessionStore, ManagedSession } from '../ssh/session-store.js';
 import type { IDisposable } from 'node-pty';
 import { detectPrompt } from '../ssh/prompt-detector.js';
 import { scrubOutput } from '../ssh/output-scrubber.js';
+import type { StreamStore } from '../ssh/stream-store.js';
 
 export interface SshSessionExecuteInput {
   session_id: string;
   command: string;
   timeout_ms?: number; // default 30000
+  /** When true, run asynchronously and return a stream_id for polling. */
+  stream?: boolean;
 }
 
 export interface SshSessionExecuteResult {
@@ -22,11 +25,18 @@ export interface SshSessionExecuteResult {
   session_id: string;
 }
 
+export interface SshSessionExecuteStreamResult {
+  stream_id: string;
+  session_id: string;
+  status: 'running';
+}
+
 export async function sshSessionExecute(
   sessionStore: SessionStore,
   input: SshSessionExecuteInput,
-): Promise<SshSessionExecuteResult> {
-  const { session_id, command, timeout_ms = 30_000 } = input;
+  streamStore?: StreamStore,
+): Promise<SshSessionExecuteResult | SshSessionExecuteStreamResult> {
+  const { session_id, command, timeout_ms = 30_000, stream = false } = input;
 
   if (!session_id?.trim()) {
     throw new Error('session_id is required and cannot be empty');
@@ -52,6 +62,94 @@ export async function sshSessionExecute(
 
   const sess = session; // capture for closure — TypeScript narrowing guard
 
+  // Streaming path: return immediately, feed chunks to StreamStore
+  if (stream && streamStore) {
+    const streamId = crypto.randomUUID();
+    // For session streaming, cancel sends Ctrl-C then fails the stream
+    streamStore.create(streamId, sess.host, command, () => {
+      try { sess.ptyProcess.write('\x03'); } catch { /* ignore */ }
+    });
+
+    const effectiveTimeout = input.timeout_ms ?? 300_000;
+
+    const promise = new Promise<SshSessionExecuteResult>((resolve, reject) => {
+      let captureBuffer = '';
+      let settled = false;
+      let dataDisposable: IDisposable | undefined;
+      let exitDisposable: IDisposable | undefined;
+
+      function cleanup() {
+        if (dataDisposable) {
+          try { dataDisposable.dispose(); } catch { /* ignore */ }
+          const idx = sess.disposables.indexOf(dataDisposable);
+          if (idx !== -1) sess.disposables.splice(idx, 1);
+          dataDisposable = undefined;
+        }
+        if (exitDisposable) {
+          try { exitDisposable.dispose(); } catch { /* ignore */ }
+          const eidx = sess.disposables.indexOf(exitDisposable);
+          if (eidx !== -1) sess.disposables.splice(eidx, 1);
+          exitDisposable = undefined;
+        }
+        sess.inFlight = false;
+      }
+
+      function finish(output: string) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        cleanup();
+        const cleaned = scrubOutput(output);
+        resolve({ output: cleaned, exit_code: null, session_id });
+      }
+
+      function fail(err: Error) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        cleanup();
+        reject(err);
+      }
+
+      const timer = setTimeout(() => {
+        fail(new Error(`ssh_session_execute timed out after ${effectiveTimeout}ms`));
+      }, effectiveTimeout);
+
+      dataDisposable = sess.ptyProcess.onData((data: string) => {
+        if (settled) return;
+        captureBuffer += data;
+        sess.outputBuffer += data;
+        sess.lastActivity = Date.now();
+        try { streamStore.appendChunk(streamId, data, 'stdout'); } catch { /* ignore */ }
+        if (detectPrompt(captureBuffer, sess.platform)) {
+          finish(captureBuffer);
+        }
+      });
+      sess.disposables.push(dataDisposable);
+
+      exitDisposable = sess.ptyProcess.onExit(({ exitCode }) => {
+        sessionStore.delete(sess.id);
+        fail(new Error(`SSH PTY exited unexpectedly with code ${exitCode} during command execution`));
+      });
+      sess.disposables.push(exitDisposable);
+
+      try {
+        sess.ptyProcess.write(command + '\r');
+      } catch (err) {
+        sessionStore.delete(sess.id);
+        fail(new Error(`Failed to write to PTY: ${String(err)}`));
+      }
+    });
+
+    // Handle completion/failure in the background
+    promise
+      .then(() => streamStore.complete(streamId, null))
+      .catch((err) => streamStore.fail(streamId, err instanceof Error ? err.message : String(err)));
+
+    return { stream_id: streamId, session_id, status: 'running' as const };
+  }
+
+  // Non-streaming path (unchanged)
   return new Promise<SshSessionExecuteResult>((resolve, reject) => {
     let captureBuffer = '';
     let settled = false;

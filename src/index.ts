@@ -23,12 +23,16 @@ import { sshSessionOpen } from './tools/ssh-session-open.js';
 import { sshSessionExecute } from './tools/ssh-session-execute.js';
 import { sshSessionClose } from './tools/ssh-session-close.js';
 import { SessionStore } from './ssh/session-store.js';
+import { StreamStore } from './ssh/stream-store.js';
 import { sshMultiExecute } from './tools/ssh-multi-execute.js';
 import { credentialGet } from './tools/credential-get.js';
 import { credentialListBackends } from './tools/credential-list.js';
 import { sshCheckHost } from './tools/ssh-check.js';
 import { versionCheck } from './tools/version-check.js';
 import { credentialDiagnose } from './tools/credential-diagnose.js';
+import { sshStreamRead } from './tools/ssh-stream-read.js';
+import { sshStreamCancel } from './tools/ssh-stream-cancel.js';
+import { sshStreamList } from './tools/ssh-stream-list.js';
 import { CredentialRegistry } from './credentials/registry.js';
 import { CredentialMap } from './credentials/credential-map.js';
 import { BitwardenBackend } from './credentials/bitwarden.js';
@@ -67,13 +71,14 @@ registry.register(new GoogleSecretManagerBackend());
 registry.register(new SshAgentBackend());
 
 const sessionStore = new SessionStore();
+const streamStore = new StreamStore();
 const credentialMap = new CredentialMap();
 
-// Graceful shutdown: destroy all sessions before exiting
-const shutdown = () => { sessionStore.destroy(); process.exit(0); };
+// Graceful shutdown: destroy all sessions and streams before exiting
+const shutdown = () => { streamStore.destroy(); sessionStore.destroy(); process.exit(0); };
 process.once('SIGINT', shutdown);
 process.once('SIGTERM', shutdown);
-process.on('exit', () => sessionStore.destroy());
+process.on('exit', () => { streamStore.destroy(); sessionStore.destroy(); });
 
 // ── ssh_execute ──────────────────────────────────────────────────────────────
 server.tool(
@@ -91,10 +96,11 @@ server.tool(
       .describe('Platform hint for prompt detection (default: auto)'),
     timeout_ms: z.number().int().positive().optional().describe('Connection + command timeout in milliseconds (default: 30000)'),
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
+    stream: z.boolean().optional().describe('When true, run asynchronously and return a stream_id for polling output via ssh_stream_read.'),
   },
   async (input) => {
     try {
-      const result = await sshExecute(registry, input, credentialMap);
+      const result = await sshExecute(registry, input, credentialMap, streamStore);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
@@ -238,10 +244,11 @@ server.tool(
     session_id: z.string().describe('Session ID returned by ssh_session_open'),
     command: z.string().describe('Command to execute in the session'),
     timeout_ms: z.number().int().positive().optional().describe('Command timeout in milliseconds (default: 30000)'),
+    stream: z.boolean().optional().describe('When true, run asynchronously and return a stream_id for polling output via ssh_stream_read.'),
   },
   async (input) => {
     try {
-      const result = await sshSessionExecute(sessionStore, input);
+      const result = await sshSessionExecute(sessionStore, input, streamStore);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
@@ -303,6 +310,65 @@ server.tool(
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ success: true, path: credentialMap.getFilePath() }) }],
       };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_stream_read ──────────────────────────────────────────────────────────
+server.tool(
+  'ssh_stream_read',
+  'Read output chunks from a streaming SSH command started with stream=true.',
+  {
+    stream_id: z.string().describe('Stream ID returned by ssh_execute or ssh_session_execute with stream=true'),
+    offset: z.number().int().min(0).optional().describe('Chunk offset to read from (default: 0). Use the offset returned by previous reads to get only new chunks.'),
+  },
+  async (input) => {
+    try {
+      const result = sshStreamRead(streamStore, input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_stream_cancel ────────────────────────────────────────────────────────
+server.tool(
+  'ssh_stream_cancel',
+  'Cancel a running streaming SSH command.',
+  {
+    stream_id: z.string().describe('Stream ID of the stream to cancel'),
+  },
+  async (input) => {
+    try {
+      const result = sshStreamCancel(streamStore, input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_stream_list ──────────────────────────────────────────────────────────
+server.tool(
+  'ssh_stream_list',
+  'List all active and recent streaming SSH commands.',
+  {},
+  async () => {
+    try {
+      const result = sshStreamList(streamStore);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
