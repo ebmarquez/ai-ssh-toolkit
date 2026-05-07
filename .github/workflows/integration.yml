@@ -3,8 +3,18 @@ name: Integration Tests
 on:
   push:
     branches: [main]
+    paths:
+      - 'src/credentials/azure-keyvault.ts'
+      - 'test/integration/azure-keyvault*'
+      - 'test/integration/mcp-azure-keyvault*'
+      - '.github/workflows/integration.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'src/credentials/azure-keyvault.ts'
+      - 'test/integration/azure-keyvault*'
+      - 'test/integration/mcp-azure-keyvault*'
+      - '.github/workflows/integration.yml'
   workflow_dispatch:
 
 permissions:
