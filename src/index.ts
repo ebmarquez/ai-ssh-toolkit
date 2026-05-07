@@ -36,6 +36,7 @@ import { AzureKeyVaultBackend } from './credentials/azure-keyvault.js';
 import { EnvCredentialBackend } from './credentials/env.js';
 import { GoogleSecretManagerBackend } from './credentials/google-secret-manager.js';
 import { SshAgentBackend } from './credentials/ssh-agent.js';
+import { AuditLogger } from './audit/audit-logger.js';
 import { readFileSync } from 'fs';
 
 function getPackageVersion(): string {
@@ -68,6 +69,7 @@ registry.register(new SshAgentBackend());
 
 const sessionStore = new SessionStore();
 const credentialMap = new CredentialMap();
+const auditLogger = new AuditLogger();
 
 // Graceful shutdown: destroy all sessions before exiting
 const shutdown = () => { sessionStore.destroy(); process.exit(0); };
@@ -93,10 +95,31 @@ server.tool(
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
   },
   async (input) => {
+    const start = Date.now();
     try {
       const result = await sshExecute(registry, input, credentialMap);
+      auditLogger.log({
+        tool: 'ssh_execute',
+        host: input.host,
+        username: input.username ?? '',
+        credential_backend: input.credential_backend,
+        command: input.command,
+        exit_code: result.exit_code,
+        duration_ms: Date.now() - start,
+        stdout_bytes: Buffer.byteLength(result.output, 'utf-8'),
+        success: true,
+      });
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
+      auditLogger.log({
+        tool: 'ssh_execute',
+        host: input.host,
+        username: input.username ?? '',
+        credential_backend: input.credential_backend,
+        command: input.command,
+        duration_ms: Date.now() - start,
+        success: false,
+      });
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
         isError: true,
@@ -188,10 +211,25 @@ server.tool(
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
   },
   async (input) => {
+    const start = Date.now();
     try {
       const result = await sshCheckHost(input, credentialMap);
+      auditLogger.log({
+        tool: 'ssh_check_host',
+        host: input.host,
+        username: input.username ?? '',
+        duration_ms: Date.now() - start,
+        success: result.reachable,
+      });
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
+      auditLogger.log({
+        tool: 'ssh_check_host',
+        host: input.host,
+        username: input.username ?? '',
+        duration_ms: Date.now() - start,
+        success: false,
+      });
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
         isError: true,
@@ -218,10 +256,27 @@ server.tool(
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
   },
   async (input) => {
+    const start = Date.now();
     try {
       const result = await sshSessionOpen(registry, sessionStore, input, credentialMap);
+      auditLogger.log({
+        tool: 'ssh_session_open',
+        host: input.host,
+        username: result.username,
+        credential_backend: input.credential_backend,
+        duration_ms: Date.now() - start,
+        success: true,
+      });
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
+      auditLogger.log({
+        tool: 'ssh_session_open',
+        host: input.host,
+        username: input.username ?? '',
+        credential_backend: input.credential_backend,
+        duration_ms: Date.now() - start,
+        success: false,
+      });
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
         isError: true,
@@ -240,10 +295,30 @@ server.tool(
     timeout_ms: z.number().int().positive().optional().describe('Command timeout in milliseconds (default: 30000)'),
   },
   async (input) => {
+    const start = Date.now();
+    const session = sessionStore.get(input.session_id);
     try {
       const result = await sshSessionExecute(sessionStore, input);
+      auditLogger.log({
+        tool: 'ssh_session_execute',
+        host: session?.host ?? '',
+        username: session?.username ?? '',
+        command: input.command,
+        exit_code: result.exit_code,
+        duration_ms: Date.now() - start,
+        stdout_bytes: Buffer.byteLength(result.output, 'utf-8'),
+        success: true,
+      });
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
+      auditLogger.log({
+        tool: 'ssh_session_execute',
+        host: session?.host ?? '',
+        username: session?.username ?? '',
+        command: input.command,
+        duration_ms: Date.now() - start,
+        success: false,
+      });
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
         isError: true,
@@ -260,10 +335,26 @@ server.tool(
     session_id: z.string().describe('Session ID returned by ssh_session_open'),
   },
   async (input) => {
+    const start = Date.now();
+    const session = sessionStore.get(input.session_id);
     try {
       const result = await sshSessionClose(sessionStore, input);
+      auditLogger.log({
+        tool: 'ssh_session_close',
+        host: session?.host ?? '',
+        username: session?.username ?? '',
+        duration_ms: Date.now() - start,
+        success: true,
+      });
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
+      auditLogger.log({
+        tool: 'ssh_session_close',
+        host: session?.host ?? '',
+        username: session?.username ?? '',
+        duration_ms: Date.now() - start,
+        success: false,
+      });
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
         isError: true,
@@ -321,6 +412,32 @@ server.tool(
     try {
       const result = await versionCheck();
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_audit_log_read ────────────────────────────────────────────────────────
+server.tool(
+  'ssh_audit_log_read',
+  'Read the last N audit log records from the file destination (if configured via AI_SSH_AUDIT_LOG).',
+  {
+    limit: z.number().int().positive().optional().describe('Number of recent records to return (default: 50)'),
+  },
+  async (input) => {
+    try {
+      if (!auditLogger.logFilePath) {
+        return {
+          content: [{ type: 'text' as const, text: 'Error: No audit log file configured. Set AI_SSH_AUDIT_LOG=<filepath> to enable.' }],
+          isError: true,
+        };
+      }
+      const records = auditLogger.readLastRecords(input.limit ?? 50);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(records, null, 2) }] };
     } catch (err: unknown) {
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
