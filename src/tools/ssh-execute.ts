@@ -6,6 +6,12 @@ import type { PlatformHint } from '../ssh/prompt-detector.js';
 import type { CredentialRegistry } from '../credentials/registry.js';
 import { runSshSession } from '../ssh/pty-manager.js';
 import type { CredentialMap } from '../credentials/credential-map.js';
+import {
+  type EscalationCredentialRef,
+  fetchEscalationCredential,
+  buildSudoCommand,
+  validateEscalationInputs,
+} from '../ssh/privilege-escalation.js';
 
 export interface SshExecuteInput {
   host: string;
@@ -22,6 +28,11 @@ export interface SshExecuteInput {
    * Set to false to bypass ssh config lookup entirely.
    */
   use_ssh_config?: boolean;
+  /** When true, run the command under sudo. Uses sudo -n (non-interactive)
+   *  if no sudo_password_ref is provided. */
+  sudo?: boolean;
+  /** Credential ref for the sudo password (separate from login credential). */
+  sudo_password_ref?: EscalationCredentialRef;
 }
 
 export interface SshExecuteResult {
@@ -45,6 +56,9 @@ export async function sshExecute(
     platform = 'auto',
     timeout_ms = 30000,
   } = input;
+
+  // Validate escalation input combinations
+  validateEscalationInputs(input);
 
   // Validate required inputs before any lookups
   if (!host) throw new Error('host is required');
@@ -96,20 +110,35 @@ export async function sshExecute(
   // ssh config resolution first (if use_ssh_config is enabled) and throw with
   // a better error message if username resolution still fails.
 
+  // ── Privilege escalation ─────────────────────────────────────────────────
+  let sudoPasswordBuffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+  let finalCommand = command;
+
+  if (input.sudo) {
+    if (input.sudo_password_ref) {
+      sudoPasswordBuffer = await fetchEscalationCredential(registry, input.sudo_password_ref);
+      finalCommand = buildSudoCommand(command, true);
+    } else {
+      finalCommand = buildSudoCommand(command, false);
+    }
+  }
+
   // Run the PTY session
   try {
     const result = await runSshSession({
       host,
       username: resolvedUsername || undefined,
       password: passwordBuffer,
-      command,
+      command: finalCommand,
       platform,
       timeout_ms,
       use_ssh_config: input.use_ssh_config ?? true,
+      sudo_password: sudoPasswordBuffer.length > 0 ? sudoPasswordBuffer : undefined,
     });
     return result;
   } finally {
-    // Zero-fill password buffer after PTY session completes (success or failure)
+    // Zero-fill password buffers after PTY session completes (success or failure)
     passwordBuffer.fill(0);
+    sudoPasswordBuffer.fill(0);
   }
 }

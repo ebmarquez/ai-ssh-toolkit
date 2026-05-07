@@ -91,6 +91,11 @@ server.tool(
       .describe('Platform hint for prompt detection (default: auto)'),
     timeout_ms: z.number().int().positive().optional().describe('Connection + command timeout in milliseconds (default: 30000)'),
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
+    sudo: z.boolean().optional().describe('When true, run the command under sudo. Uses sudo -n (non-interactive) if no sudo_password_ref is provided.'),
+    sudo_password_ref: z.object({
+      backend: z.string().describe('Credential backend name'),
+      ref: z.string().describe('Credential reference string'),
+    }).optional().describe('Credential reference for the sudo password (separate from login credential)'),
   },
   async (input) => {
     try {
@@ -238,10 +243,19 @@ server.tool(
     session_id: z.string().describe('Session ID returned by ssh_session_open'),
     command: z.string().describe('Command to execute in the session'),
     timeout_ms: z.number().int().positive().optional().describe('Command timeout in milliseconds (default: 30000)'),
+    sudo: z.boolean().optional().describe('When true, run the command under sudo. Uses sudo -n (non-interactive) if no sudo_password_ref is provided.'),
+    sudo_password_ref: z.object({
+      backend: z.string().describe('Credential backend name'),
+      ref: z.string().describe('Credential reference string'),
+    }).optional().describe('Credential reference for the sudo password'),
+    enable_password_ref: z.object({
+      backend: z.string().describe('Credential backend name'),
+      ref: z.string().describe('Credential reference string'),
+    }).optional().describe('Credential reference for Cisco IOS enable mode password'),
   },
   async (input) => {
     try {
-      const result = await sshSessionExecute(sessionStore, input);
+      const result = await sshSessionExecute(sessionStore, input, registry);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
