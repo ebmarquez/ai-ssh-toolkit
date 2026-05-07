@@ -2,7 +2,7 @@
  * Unit tests for ssh-transfer tools (ssh_upload, ssh_download, ssh_sftp_list).
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { CredentialRegistry } from '../../src/credentials/registry.js';
 import type { CredentialMap } from '../../src/credentials/credential-map.js';
 
@@ -28,7 +28,7 @@ vi.mock('../../src/ssh/ssh-config-reader.js', () => ({
 }));
 
 import { sshUpload, sshDownload, sshSftpList, parseSftpListing, runSftp } from '../../src/tools/ssh-transfer.js';
-import type { SshUploadInput, SshDownloadInput, SshSftpListInput } from '../../src/tools/ssh-transfer.js';
+import type { SshUploadInput } from '../../src/tools/ssh-transfer.js';
 import { EventEmitter, PassThrough, Writable } from 'stream';
 
 // ── Test helpers ─────────────────────────────────────────────────────────────
