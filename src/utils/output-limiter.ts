@@ -51,7 +51,6 @@ function byteSafeSlice(str: string, maxBytes: number): string {
   if (buf.length <= maxBytes) return str;
   // Walk back from maxBytes to avoid splitting a multi-byte char
   let end = maxBytes;
-  // eslint-disable-next-line no-bitwise
   while (end > 0 && (buf[end]! & 0xc0) === 0x80) end--;
   return buf.subarray(0, end).toString('utf-8');
 }
