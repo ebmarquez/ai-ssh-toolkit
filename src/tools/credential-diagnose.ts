@@ -47,7 +47,7 @@ export async function credentialDiagnose(
     const backend = registry.getBackend(resolved.backend);
     backendAvailable = await backend.isAvailable();
   } catch {
-    backendAvailable = false;
+    // backend not found or unavailable
   }
 
   return {
