@@ -79,7 +79,7 @@ export class WindowsCredentialBackend implements CredentialBackend {
   async getMetadata(ref: string): Promise<CredentialMetadata> {
     this.validateRef(ref);
 
-    let username = "";
+    const username = "";
     let hasPassword = false;
 
     try {
