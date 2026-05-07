@@ -29,6 +29,8 @@ export interface SshSessionOpenInput {
    * Set to false to bypass ssh config lookup entirely.
    */
   use_ssh_config?: boolean;
+  /** ProxyJump chain — translated to `ssh -J host1,host2,...`. */
+  jump_hosts?: string[];
 }
 
 export interface SshSessionOpenResult {
@@ -141,6 +143,9 @@ export async function sshSessionOpen(
   ];
   if (resolvedPort !== undefined && resolvedPort !== 22) {
     sshArgs.push('-p', String(resolvedPort));
+  }
+  if (input.jump_hosts && input.jump_hosts.length > 0) {
+    sshArgs.push('-J', input.jump_hosts.join(','));
   }
   sshArgs.push(`${resolvedUsername}@${host}`);
 

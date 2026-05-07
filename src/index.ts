@@ -91,6 +91,7 @@ server.tool(
       .describe('Platform hint for prompt detection (default: auto)'),
     timeout_ms: z.number().int().positive().optional().describe('Connection + command timeout in milliseconds (default: 30000)'),
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
+    jump_hosts: z.array(z.string()).optional().describe('ProxyJump chain: list of bastion/jump hosts, e.g. ["bastion1.example.com","bastion2.internal"]. Translated to ssh -J flag.'),
   },
   async (input) => {
     try {
@@ -186,6 +187,7 @@ server.tool(
     timeout_ms: z.number().int().positive().optional().describe('Connection timeout in milliseconds (default: 5000)'),
     mode: z.enum(['tcp', 'banner', 'auth']).optional().describe("Check mode: 'tcp' (TCP connect only), 'banner' (TCP + SSH banner read, default), 'auth' (full ssh binary auth with BatchMode=yes)"),
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
+    jump_hosts: z.array(z.string()).optional().describe('ProxyJump chain: list of bastion/jump hosts. Used in auth mode to route through bastions. Translated to ssh -J flag.'),
   },
   async (input) => {
     try {
@@ -216,6 +218,7 @@ server.tool(
     timeout_ms: z.number().int().positive().optional().describe('Connect + initial prompt timeout in milliseconds (default: 30000)'),
     idle_timeout_ms: z.number().int().positive().optional().describe('Inactivity auto-close timeout in milliseconds (default: 300000)'),
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
+    jump_hosts: z.array(z.string()).optional().describe('ProxyJump chain: list of bastion/jump hosts, e.g. ["bastion1.example.com"]. Translated to ssh -J flag.'),
   },
   async (input) => {
     try {

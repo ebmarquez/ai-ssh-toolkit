@@ -22,6 +22,8 @@ export interface SshExecuteInput {
    * Set to false to bypass ssh config lookup entirely.
    */
   use_ssh_config?: boolean;
+  /** ProxyJump chain — translated to `ssh -J host1,host2,...`. */
+  jump_hosts?: string[];
 }
 
 export interface SshExecuteResult {
@@ -106,6 +108,7 @@ export async function sshExecute(
       platform,
       timeout_ms,
       use_ssh_config: input.use_ssh_config ?? true,
+      jump_hosts: input.jump_hosts,
     });
     return result;
   } finally {
