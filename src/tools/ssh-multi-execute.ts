@@ -2,6 +2,7 @@ import { PlatformHint, detectPrompt, detectPasswordPrompt } from "../ssh/prompt-
 import { scrubOutput } from "../ssh/output-scrubber.js";
 import { CredentialRegistry } from "../credentials/registry.js";
 import { SSH_PTY_OPTIONS } from "../ssh/pty-options.js";
+import type { CredentialMap } from "../credentials/credential-map.js";
 
 export interface SshMultiExecuteInput {
   hosts: string[];
@@ -39,10 +40,24 @@ export async function executeSingleHost(
   host: string,
   input: SshMultiExecuteInput,
   registry?: CredentialRegistry,
+  credentialMap?: CredentialMap,
 ): Promise<HostResult> {
+  // Credential map fallback: if no explicit backend/ref, consult the map for this host
+  let effectiveBackend = input.credential_backend;
+  let effectiveRef = input.credential_ref;
+  let effectiveUsername = input.username;
+  if (effectiveBackend === undefined && effectiveRef === undefined && credentialMap) {
+    const mapped = credentialMap.resolve(host);
+    if (mapped) {
+      effectiveBackend = mapped.backend;
+      effectiveRef = mapped.ref;
+      if (mapped.username) effectiveUsername = mapped.username;
+    }
+  }
+
   // Validate credential params upfront
-  if ((input.credential_backend && !input.credential_ref) ||
-      (!input.credential_backend && input.credential_ref)) {
+  if ((effectiveBackend && !effectiveRef) ||
+      (!effectiveBackend && effectiveRef)) {
     return {
       host,
       success: false,
@@ -50,7 +65,7 @@ export async function executeSingleHost(
       duration_ms: 0,
     };
   }
-  if (input.credential_backend && !registry) {
+  if (effectiveBackend && !registry) {
     return {
       host,
       success: false,
@@ -64,14 +79,14 @@ export async function executeSingleHost(
   let password: Buffer | undefined;
   try {
     // Resolve credentials if a backend is configured
-    let username = input.username;
+    let username = effectiveUsername;
 
-    if (input.credential_backend && input.credential_ref && registry) {
-      const backend = registry.getBackend(input.credential_backend);
+    if (effectiveBackend && effectiveRef && registry) {
+      const backend = registry.getBackend(effectiveBackend);
       try {
         const cred = await registry.getCredential(
-          input.credential_backend,
-          input.credential_ref,
+          effectiveBackend,
+          effectiveRef,
         );
         username = cred.username;
         password = cred.password;
@@ -117,6 +132,7 @@ export async function executeSingleHost(
 export async function sshMultiExecute(
   input: SshMultiExecuteInput,
   registry?: CredentialRegistry,
+  credentialMap?: CredentialMap,
   executor: typeof executeSingleHost = executeSingleHost,
 ): Promise<SshMultiExecuteOutput> {
   const wallStart = Date.now();
@@ -146,7 +162,7 @@ export async function sshMultiExecute(
         const { host, idx } = queue[queuePos++];
         activeSlots++;
 
-        executor(host, input, registry)
+        executor(host, input, registry, credentialMap)
           .catch((err): HostResult => ({
             // Capture host in closure so rejection fallback has the right name
             host,

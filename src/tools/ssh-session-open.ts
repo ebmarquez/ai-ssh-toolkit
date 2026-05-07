@@ -12,7 +12,7 @@ import type { SessionStore } from '../ssh/session-store.js';
 import { detectPasswordPrompt, detectPrompt } from '../ssh/prompt-detector.js';
 import { SSH_PTY_OPTIONS } from '../ssh/pty-options.js';
 import { resolveSshConfig } from '../ssh/ssh-config-reader.js';
-import { CredentialMap } from '../credentials/credential-map.js';
+import type { CredentialMap } from '../credentials/credential-map.js';
 
 export interface SshSessionOpenInput {
   host: string;
@@ -42,6 +42,7 @@ export async function sshSessionOpen(
   registry: CredentialRegistry,
   sessionStore: SessionStore,
   input: SshSessionOpenInput,
+  credentialMap: CredentialMap,
 ): Promise<SshSessionOpenResult> {
   const {
     host,
@@ -61,8 +62,7 @@ export async function sshSessionOpen(
   // Credential map fallback: if no explicit backend/ref, consult the map
   let mappedUsername: string | undefined;
   if (credential_backend === undefined && credential_ref === undefined) {
-    const credMap = new CredentialMap();
-    const mapped = credMap.resolve(host);
+    const mapped = credentialMap.resolve(host);
     if (mapped) {
       credential_backend = mapped.backend;
       credential_ref = mapped.ref;

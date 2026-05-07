@@ -30,6 +30,7 @@ import { sshCheckHost } from './tools/ssh-check.js';
 import { versionCheck } from './tools/version-check.js';
 import { credentialDiagnose } from './tools/credential-diagnose.js';
 import { CredentialRegistry } from './credentials/registry.js';
+import { CredentialMap } from './credentials/credential-map.js';
 import { BitwardenBackend } from './credentials/bitwarden.js';
 import { AzureKeyVaultBackend } from './credentials/azure-keyvault.js';
 import { EnvCredentialBackend } from './credentials/env.js';
@@ -66,6 +67,7 @@ registry.register(new GoogleSecretManagerBackend());
 registry.register(new SshAgentBackend());
 
 const sessionStore = new SessionStore();
+const credentialMap = new CredentialMap();
 
 // Graceful shutdown: destroy all sessions before exiting
 const shutdown = () => { sessionStore.destroy(); process.exit(0); };
@@ -92,7 +94,7 @@ server.tool(
   },
   async (input) => {
     try {
-      const result = await sshExecute(registry, input);
+      const result = await sshExecute(registry, input, credentialMap);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
@@ -123,7 +125,7 @@ server.tool(
   },
   async (input) => {
     try {
-      const result = await sshMultiExecute(input, registry);
+      const result = await sshMultiExecute(input, registry, credentialMap);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
     } catch (err: unknown) {
       return {
@@ -186,7 +188,7 @@ server.tool(
   },
   async (input) => {
     try {
-      const result = await sshCheckHost(input);
+      const result = await sshCheckHost(input, credentialMap);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
@@ -216,7 +218,7 @@ server.tool(
   },
   async (input) => {
     try {
-      const result = await sshSessionOpen(registry, sessionStore, input);
+      const result = await sshSessionOpen(registry, sessionStore, input, credentialMap);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
@@ -278,8 +280,28 @@ server.tool(
   },
   async (input) => {
     try {
-      const result = await credentialDiagnose(registry, input);
+      const result = await credentialDiagnose(registry, input, credentialMap);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── credential_map_reload ─────────────────────────────────────────────────────
+server.tool(
+  'credential_map_reload',
+  'Reload the credential map configuration from disk.',
+  {},
+  async () => {
+    try {
+      credentialMap.reload();
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ success: true, path: credentialMap.getFilePath() }) }],
+      };
     } catch (err: unknown) {
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],

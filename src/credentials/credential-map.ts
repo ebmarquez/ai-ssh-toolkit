@@ -17,6 +17,12 @@ export interface CredentialMapRule {
   username?: string;
 }
 
+/** Internal representation with pre-compiled regex for performance and ReDoS mitigation. */
+interface CompiledRule {
+  rule: CredentialMapRule;
+  regex: RegExp;
+}
+
 export interface CredentialMapFile {
   rules: CredentialMapRule[];
 }
@@ -27,6 +33,8 @@ export interface CredentialMapResult {
   username?: string;
   /** The rule that matched (for diagnostics) */
   matched_rule?: CredentialMapRule;
+  /** Index of the matched rule in the rules array */
+  matched_rule_index?: number;
 }
 
 /**
@@ -51,7 +59,7 @@ function globToRegex(pattern: string): RegExp {
 }
 
 export class CredentialMap {
-  private rules: CredentialMapRule[] = [];
+  private compiledRules: CompiledRule[] = [];
   private filePath: string;
 
   constructor(filePath?: string) {
@@ -75,14 +83,23 @@ export class CredentialMap {
 
   /** Resolve a host to a credential backend+ref. Returns null if no rule matches. */
   resolve(host: string): CredentialMapResult | null {
-    for (const rule of this.rules) {
-      if (this.matches(rule, host)) {
-        return {
-          backend: rule.backend,
-          ref: rule.ref,
-          username: rule.username,
-          matched_rule: rule,
-        };
+    for (let i = 0; i < this.compiledRules.length; i++) {
+      const { rule, regex } = this.compiledRules[i];
+      // ReDoS note: regex is pre-compiled at load time. User-supplied patterns
+      // could still be expensive; consider restricting pattern complexity in docs.
+      try {
+        if (regex.test(host)) {
+          return {
+            backend: rule.backend,
+            ref: rule.ref,
+            username: rule.username,
+            matched_rule: rule,
+            matched_rule_index: i,
+          };
+        }
+      } catch {
+        // Skip rules whose regex throws (should not happen with pre-compiled, but defensive)
+        continue;
       }
     }
     return null;
@@ -90,7 +107,12 @@ export class CredentialMap {
 
   /** Get loaded rules (for diagnostics) */
   getRules(): ReadonlyArray<CredentialMapRule> {
-    return this.rules;
+    return this.compiledRules.map(cr => cr.rule);
+  }
+
+  /** Get the config file path */
+  getFilePath(): string {
+    return this.filePath;
   }
 
   private load(): void {
@@ -98,26 +120,29 @@ export class CredentialMap {
       const raw = readFileSync(this.filePath, 'utf-8');
       const parsed = JSON.parse(raw) as CredentialMapFile;
       if (Array.isArray(parsed.rules)) {
-        this.rules = parsed.rules;
+        // Validate: skip entries missing required fields
+        const validRules = parsed.rules.filter(
+          (r): r is CredentialMapRule =>
+            typeof r.match === 'string' && typeof r.backend === 'string'
+        );
+        // Pre-compile all regexes at load time to avoid per-resolve overhead
+        this.compiledRules = [];
+        for (const rule of validRules) {
+          try {
+            const regex = rule.match_regex
+              ? new RegExp(rule.match_regex, 'i')
+              : globToRegex(rule.match);
+            this.compiledRules.push({ rule, regex });
+          } catch {
+            // Skip rules with invalid regex patterns
+          }
+        }
       } else {
-        this.rules = [];
+        this.compiledRules = [];
       }
     } catch {
       // Missing file or invalid JSON — silent no-op
-      this.rules = [];
+      this.compiledRules = [];
     }
-  }
-
-  private matches(rule: CredentialMapRule, host: string): boolean {
-    if (rule.match_regex) {
-      try {
-        const re = new RegExp(rule.match_regex, 'i');
-        return re.test(host);
-      } catch {
-        return false;
-      }
-    }
-    const re = globToRegex(rule.match);
-    return re.test(host);
   }
 }
