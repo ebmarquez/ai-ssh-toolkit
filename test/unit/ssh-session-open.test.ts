@@ -41,6 +41,7 @@ vi.mock('node-pty', () => {
 import { SessionStore } from '../../src/ssh/session-store.js';
 import { sshSessionOpen } from '../../src/tools/ssh-session-open.js';
 import type { CredentialRegistry } from '../../src/credentials/registry.js';
+import { CredentialMap } from '../../src/credentials/credential-map.js';
 
 function makeRegistry(overrides: Partial<CredentialRegistry> = {}): CredentialRegistry {
   return {
@@ -64,6 +65,9 @@ beforeEach(() => {
 });
 
 describe('sshSessionOpen', () => {
+  // Create a CredentialMap with no rules (non-existent file — silent no-op)
+  const credentialMap = new CredentialMap('/dev/null/nonexistent');
+
   it('returns a session_id and adds session to store on successful connect', async () => {
     const store = new SessionStore();
     const registry = makeRegistry();
@@ -73,7 +77,7 @@ describe('sshSessionOpen', () => {
       username: 'eric',
       platform: 'linux',
       timeout_ms: 5000,
-    });
+    }, credentialMap);
 
     // Let config resolution + dynamic import resolve
     await new Promise(r => setTimeout(r, 20));
@@ -104,7 +108,7 @@ describe('sshSessionOpen', () => {
       credential_backend: 'bitwarden',
       platform: 'linux',
       timeout_ms: 5000,
-    });
+    }, credentialMap);
 
     await new Promise(r => setTimeout(r, 20));
 
@@ -128,7 +132,7 @@ describe('sshSessionOpen', () => {
       username: 'eric',
       platform: 'linux',
       timeout_ms: 50,
-    });
+    }, credentialMap);
 
     // Never send a prompt — let it time out
     await expect(promise).rejects.toThrow(/timed out/i);
@@ -145,7 +149,7 @@ describe('sshSessionOpen', () => {
       username: 'eric',
       platform: 'linux',
       timeout_ms: 5000,
-    });
+    }, credentialMap);
 
     await new Promise(r => setTimeout(r, 20));
 

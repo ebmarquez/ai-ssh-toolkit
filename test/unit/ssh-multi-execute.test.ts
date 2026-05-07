@@ -140,7 +140,7 @@ describe("sshMultiExecute", () => {
       commands: ["show version"],
     };
 
-    const result = await sshMultiExecute(input, undefined, executor as typeof executeSingleHost);
+    const result = await sshMultiExecute(input, undefined, undefined, executor as typeof executeSingleHost);
 
     expect(result.total_hosts).toBe(3);
     expect(result.results).toHaveLength(3);
@@ -168,6 +168,7 @@ describe("sshMultiExecute", () => {
         username: "admin",
         commands: ["hostname"],
       },
+      undefined,
       undefined,
       executor as typeof executeSingleHost,
     );
@@ -198,6 +199,7 @@ describe("sshMultiExecute", () => {
         commands: ["uptime"],
         max_parallel: 5,
       },
+      undefined,
       undefined,
       executor as typeof executeSingleHost,
     );
@@ -233,6 +235,7 @@ describe("sshMultiExecute", () => {
         commands: ["hostname"],
       },
       undefined,
+      undefined,
       executor as typeof executeSingleHost,
     );
 
@@ -255,6 +258,7 @@ describe("sshMultiExecute", () => {
     const hosts = Array.from({ length: 25 }, (_, i) => `10.0.${Math.floor(i / 255)}.${(i % 255) + 1}`);
     await sshMultiExecute(
       { hosts, username: "admin", commands: ["uptime"] },
+      undefined,
       undefined,
       executor as typeof executeSingleHost,
     );
@@ -285,6 +289,7 @@ describe("sshMultiExecute", () => {
         username: "admin",
         commands: ["test"],
       },
+      undefined,
       undefined,
       executor as typeof executeSingleHost,
     );

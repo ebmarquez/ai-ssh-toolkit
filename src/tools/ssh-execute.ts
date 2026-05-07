@@ -5,6 +5,7 @@
 import type { PlatformHint } from '../ssh/prompt-detector.js';
 import type { CredentialRegistry } from '../credentials/registry.js';
 import { runSshSession } from '../ssh/pty-manager.js';
+import type { CredentialMap } from '../credentials/credential-map.js';
 
 export interface SshExecuteInput {
   host: string;
@@ -30,24 +31,38 @@ export interface SshExecuteResult {
 
 export async function sshExecute(
   registry: CredentialRegistry,
-  input: SshExecuteInput
+  input: SshExecuteInput,
+  credentialMap: CredentialMap,
 ): Promise<SshExecuteResult> {
+  let {
+    credential_ref,
+    credential_backend,
+  } = input;
   const {
     host,
     command,
     username,
-    credential_ref,
-    credential_backend,
     platform = 'auto',
     timeout_ms = 30000,
   } = input;
 
-  // Validate required inputs
+  // Validate required inputs before any lookups
   if (!host) throw new Error('host is required');
   if (!command) throw new Error('command is required');
 
+  // Credential map fallback: if no explicit backend/ref, consult the map
+  let mappedUsername: string | undefined;
+  if (credential_backend === undefined && credential_ref === undefined) {
+    const mapped = credentialMap.resolve(host);
+    if (mapped) {
+      credential_backend = mapped.backend;
+      credential_ref = mapped.ref;
+      mappedUsername = mapped.username;
+    }
+  }
+
   // Resolve credentials
-  let resolvedUsername = username ?? '';
+  let resolvedUsername = username ?? mappedUsername ?? '';
   // node Buffer — use ArrayBufferLike to satisfy TS6 strict generic check
   let passwordBuffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
 

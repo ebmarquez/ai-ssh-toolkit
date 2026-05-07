@@ -7,6 +7,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { resolveSshBin } from '../utils/cli-resolver.js';
 import { resolveSshConfig } from '../ssh/ssh-config-reader.js';
+import type { CredentialMap } from '../credentials/credential-map.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -30,9 +31,17 @@ export interface SshCheckResult {
   error?: string;
 }
 
-export async function sshCheckHost(input: SshCheckInput): Promise<SshCheckResult> {
+export async function sshCheckHost(input: SshCheckInput, credentialMap: CredentialMap): Promise<SshCheckResult> {
   const { host, timeout_ms = 5000, use_ssh_config = true } = input;
   let { port, username } = input;
+
+  // Credential map fallback for username resolution
+  if (!username) {
+    const mapped = credentialMap.resolve(host);
+    if (mapped?.username) {
+      username = mapped.username;
+    }
+  }
 
   if (use_ssh_config) {
     const cfg = await resolveSshConfig(host);
