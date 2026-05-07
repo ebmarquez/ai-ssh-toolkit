@@ -37,9 +37,16 @@ vi.mock('../../src/utils/cli-resolver.js', () => ({
 }));
 
 const execFileMock = vi.fn();
-vi.mock('child_process', () => ({
-  execFile: (...args: unknown[]) => execFileMock(...args),
-}));
+vi.mock('child_process', () => {
+  // Use the well-known promisify custom symbol so that
+  // promisify(execFile) delegates directly to execFileMock (returns Promises).
+  const customSymbol = Symbol.for('nodejs.util.promisify.custom');
+  const fn = Object.assign(
+    (...args: unknown[]) => execFileMock(...args),
+    { [customSymbol]: (...args: unknown[]) => execFileMock(...args) },
+  );
+  return { execFile: fn };
+});
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -111,7 +118,7 @@ describe('ssh_check_host', () => {
       const result = await tcpBannerProbe('tcp.example.com', 2222, 5000, false, () => sock as unknown as net.Socket);
 
       expect(result.reachable).toBe(true);
-      expect(result.status).toBe('ssh_banner_received');
+      expect(result.status).toBe('tcp_open');
       expect(result.latency_ms).toBeTypeOf('number');
     });
 
@@ -161,11 +168,7 @@ describe('ssh_check_host', () => {
     });
 
     it('mode=auth: auth_succeeded when ssh exits 0', async () => {
-      execFileMock.mockImplementation(
-        (_cmd: string, _args: string[], _opts: unknown, cb: (err: null, result: { stdout: string; stderr: string }) => void) => {
-          cb(null, { stdout: '', stderr: '' });
-        },
-      );
+      execFileMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
 
       const result = await sshCheckHost(
         { host: 'auth-ok.example.com', mode: 'auth', use_ssh_config: false },
@@ -178,13 +181,8 @@ describe('ssh_check_host', () => {
     });
 
     it('mode=auth: auth_failed when ssh exits 255', async () => {
-      execFileMock.mockImplementation(
-        (_cmd: string, _args: string[], _opts: unknown, cb: (err: Error & { code?: number }) => void) => {
-          const err = new Error('Permission denied') as Error & { code?: number };
-          err.code = 255;
-          cb(err);
-        },
-      );
+      const err = Object.assign(new Error('Permission denied'), { code: 255 });
+      execFileMock.mockRejectedValueOnce(err);
 
       const result = await sshCheckHost(
         { host: 'auth-fail.example.com', mode: 'auth', use_ssh_config: false },
@@ -197,13 +195,8 @@ describe('ssh_check_host', () => {
     });
 
     it('mode=auth: auth_succeeded when ssh exits 1 (connected but exit returned non-zero)', async () => {
-      execFileMock.mockImplementation(
-        (_cmd: string, _args: string[], _opts: unknown, cb: (err: Error & { code?: number }) => void) => {
-          const err = new Error('exit code 1') as Error & { code?: number };
-          err.code = 1;
-          cb(err);
-        },
-      );
+      const err = Object.assign(new Error('exit code 1'), { code: 1 });
+      execFileMock.mockRejectedValueOnce(err);
 
       const result = await sshCheckHost(
         { host: 'exit1.example.com', mode: 'auth', use_ssh_config: false },

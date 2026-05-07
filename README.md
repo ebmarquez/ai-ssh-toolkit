@@ -92,7 +92,7 @@ Check SSH host reachability via TCP connect, SSH banner probe, or full auth chec
 **Modes:**
 
 - **`banner`** (default) — TCP connect + read SSH server banner. Works for password-auth hosts without false negatives.
-- **`tcp`** — TCP connect only (just checks the port is open).
+- **`tcp`** — TCP connect only (just checks the port is open). Returns `tcp_open` or `tcp_unreachable`.
 - **`auth`** — Full SSH auth attempt using `BatchMode=yes`. Returns `auth_succeeded` or `auth_failed`.
 
 **Response fields:**
@@ -100,7 +100,7 @@ Check SSH host reachability via TCP connect, SSH banner probe, or full auth chec
 | Field | Type | Description |
 |-------|------|-------------|
 | `reachable` | boolean | Whether the host was reachable |
-| `status` | string | `'tcp_unreachable'`, `'ssh_banner_received'`, `'auth_succeeded'`, or `'auth_failed'` |
+| `status` | string | `'tcp_unreachable'`, `'tcp_open'`, `'ssh_banner_received'`, `'auth_succeeded'`, or `'auth_failed'` |
 | `latency_ms` | number \| null | Round-trip latency (null if unreachable) |
 | `banner` | string? | SSH server banner (e.g. `'SSH-2.0-OpenSSH_8.9'`), only in banner mode |
 | `error` | string? | Error message when check fails |

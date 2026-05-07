@@ -21,6 +21,7 @@ export type SshCheckMode = 'tcp' | 'banner' | 'auth';
 
 export type SshCheckStatus =
   | 'tcp_unreachable'
+  | 'tcp_open'
   | 'ssh_banner_received'
   | 'auth_succeeded'
   | 'auth_failed';
@@ -71,9 +72,12 @@ export async function tcpBannerProbe(
     const socket = socketFactory();
     let settled = false;
 
+    let bannerTimer: ReturnType<typeof setTimeout> | undefined;
+
     const finish = (result: SshCheckResult) => {
       if (settled) return;
       settled = true;
+      if (bannerTimer !== undefined) clearTimeout(bannerTimer);
       socket.removeAllListeners();
       socket.destroy();
       resolve(result);
@@ -105,7 +109,7 @@ export async function tcpBannerProbe(
       if (!readBanner) {
         finish({
           reachable: true,
-          status: 'ssh_banner_received',
+          status: 'tcp_open',
           latency_ms: latency,
         });
         return;
@@ -123,8 +127,17 @@ export async function tcpBannerProbe(
         });
       });
 
+      // If the connection closes before we get data, still report reachable
+      socket.on('close', () => {
+        finish({
+          reachable: true,
+          status: 'ssh_banner_received',
+          latency_ms: latency,
+        });
+      });
+
       // If no data arrives within a reasonable window, still report reachable
-      setTimeout(() => {
+      bannerTimer = setTimeout(() => {
         finish({
           reachable: true,
           status: 'ssh_banner_received',
