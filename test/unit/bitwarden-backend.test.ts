@@ -107,6 +107,38 @@ describe("BitwardenBackend", () => {
     });
   });
 
+  describe("checkHealth", () => {
+    it("should return available with no reason when vault is unlocked", async () => {
+      mockExecFile(JSON.stringify({ status: "unlocked" }));
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(true);
+      expect(health.reason).toBeUndefined();
+    });
+
+    it("should return diagnostic when bw CLI not found", async () => {
+      vi.mocked(resolveCliPath).mockImplementation(() => {
+        throw new Error("CLI tool not found: bw");
+      });
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(false);
+      expect(health.reason).toBe("Bitwarden CLI (bw) not found in PATH");
+    });
+
+    it("should return diagnostic when vault is locked", async () => {
+      mockExecFile(JSON.stringify({ status: "locked" }));
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(false);
+      expect(health.reason).toContain("locked");
+    });
+
+    it("should return diagnostic when status check fails", async () => {
+      mockExecFileError("Connection refused");
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(false);
+      expect(health.reason).toContain("status check failed");
+    });
+  });
+
   describe("getCredential", () => {
     it("should return username and password Buffer from BW item", async () => {
       const bwItem = {

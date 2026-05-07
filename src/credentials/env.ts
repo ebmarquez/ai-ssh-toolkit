@@ -2,6 +2,7 @@ import {
   CredentialBackend,
   CredentialResult,
   CredentialMetadata,
+  HealthCheckResult,
 } from "./backend.js";
 
 /**
@@ -17,6 +18,10 @@ export class EnvCredentialBackend implements CredentialBackend {
 
   async isAvailable(): Promise<boolean> {
     return true;
+  }
+
+  async checkHealth(): Promise<HealthCheckResult> {
+    return { available: true };
   }
 
   async getCredential(ref: string): Promise<CredentialResult> {

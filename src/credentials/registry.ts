@@ -1,8 +1,11 @@
-import type { CredentialBackend, CredentialMetadata, CredentialResult } from './backend.js';
+import type { CredentialBackend, CredentialMetadata, CredentialResult, HealthCheckResult } from './backend.js';
+
+export type { HealthCheckResult } from './backend.js';
 
 export interface BackendStatus {
   name: string;
   available: boolean;
+  reason?: string;
 }
 
 /**
@@ -14,6 +17,7 @@ export interface BackendStatus {
 export class CredentialRegistry {
   private backends: Map<string, CredentialBackend> = new Map();
   private availability: Map<string, boolean> = new Map();
+  private diagnostics: Map<string, string | undefined> = new Map();
 
   /** Register a backend instance */
   register(backend: CredentialBackend): void {
@@ -30,12 +34,17 @@ export class CredentialRegistry {
     const results = await Promise.all(
       entries.map(async ([name, backend]): Promise<BackendStatus> => {
         try {
-          const available = await backend.isAvailable();
-          this.availability.set(name, available);
-          return { name, available };
-        } catch {
+          const health = await backend.checkHealth();
+          this.availability.set(name, health.available);
+          this.diagnostics.set(name, health.reason);
+          const status: BackendStatus = { name, available: health.available };
+          if (health.reason) status.reason = health.reason;
+          return status;
+        } catch (err) {
+          const reason = `Health check threw: ${err instanceof Error ? err.message : String(err)}`;
           this.availability.set(name, false);
-          return { name, available: false };
+          this.diagnostics.set(name, reason);
+          return { name, available: false, reason };
         }
       })
     );
@@ -45,10 +54,15 @@ export class CredentialRegistry {
 
   /** List all backends with cached availability status */
   listBackends(): BackendStatus[] {
-    return Array.from(this.backends.keys()).map((name) => ({
-      name,
-      available: this.availability.get(name) ?? false,
-    }));
+    return Array.from(this.backends.keys()).map((name) => {
+      const status: BackendStatus = {
+        name,
+        available: this.availability.get(name) ?? false,
+      };
+      const reason = this.diagnostics.get(name);
+      if (reason) status.reason = reason;
+      return status;
+    });
   }
 
   /** Get a credential from a specific backend */
@@ -82,6 +96,11 @@ export class CredentialRegistry {
   /** Check if a specific backend is available */
   isAvailable(name: string): boolean {
     return this.availability.get(name) ?? false;
+  }
+
+  /** Get cached diagnostic reason for a backend (if any) */
+  getDiagnostic(name: string): string | undefined {
+    return this.diagnostics.get(name);
   }
 
   /** Number of registered backends */

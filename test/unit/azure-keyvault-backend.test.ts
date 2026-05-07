@@ -77,6 +77,31 @@ describe("AzureKeyVaultBackend", () => {
     });
   });
 
+  describe("checkHealth", () => {
+    it("should return available when az CLI is authenticated", async () => {
+      mockExecFile(JSON.stringify({ name: "my-sub", state: "Enabled" }));
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(true);
+      expect(health.reason).toBeUndefined();
+    });
+
+    it("should return diagnostic when az CLI not found", async () => {
+      vi.mocked(resolveCliPath).mockImplementation(() => {
+        throw new Error("CLI tool not found: az");
+      });
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(false);
+      expect(health.reason).toBe("Azure CLI (az) not found in PATH");
+    });
+
+    it("should return diagnostic when az not authenticated", async () => {
+      mockExecFileError("Please run az login");
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(false);
+      expect(health.reason).toContain("az login");
+    });
+  });
+
   describe("ref format validation", () => {
     it("should throw on ref without slash", async () => {
       await expect(backend.getCredential("no-slash")).rejects.toThrow(

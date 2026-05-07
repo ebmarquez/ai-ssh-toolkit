@@ -3,6 +3,7 @@ import {
   CredentialBackend,
   CredentialResult,
   CredentialMetadata,
+  HealthCheckResult,
 } from "./backend.js";
 import { resolveCliPath } from "../utils/cli-resolver.js";
 
@@ -38,8 +39,18 @@ export class BitwardenBackend implements CredentialBackend {
   private stagedBuffers: Buffer[] = [];
 
   async isAvailable(): Promise<boolean> {
+    const health = await this.checkHealth();
+    return health.available;
+  }
+
+  async checkHealth(): Promise<HealthCheckResult> {
     try {
       this.cliPath = resolveCliPath("bw");
+    } catch {
+      return { available: false, reason: 'Bitwarden CLI (bw) not found in PATH' };
+    }
+
+    try {
       this.hydrateSessionKeyFromEnv();
       const args = this.sessionKey ? ["status", "--session", this.sessionKey] : ["status"];
       const { stdout } = await execFileAsync(this.cliPath, args, {
@@ -47,11 +58,11 @@ export class BitwardenBackend implements CredentialBackend {
       });
       const status = JSON.parse(stdout);
       if (status.status === "unlocked") {
-        return true;
+        return { available: true };
       }
-      return false;
-    } catch {
-      return false;
+      return { available: false, reason: `Bitwarden vault is ${status.status ?? 'not unlocked'} — run 'bw unlock' first` };
+    } catch (err) {
+      return { available: false, reason: `Bitwarden status check failed: ${err instanceof Error ? err.message : String(err)}` };
     }
   }
 
