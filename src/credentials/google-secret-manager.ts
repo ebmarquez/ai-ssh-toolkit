@@ -20,7 +20,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { resolve } from 'path';
-import type { CredentialBackend, CredentialMetadata, CredentialResult } from './backend.js';
+import type { CredentialBackend, CredentialMetadata, CredentialResult, HealthCheckResult } from './backend.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -62,15 +62,25 @@ export class GoogleSecretManagerBackend implements CredentialBackend {
   }
 
   async isAvailable(): Promise<boolean> {
+    const health = await this.checkHealth();
+    return health.available;
+  }
+
+  async checkHealth(): Promise<HealthCheckResult> {
+    let gcloud: string;
     try {
-      const gcloud = await this.resolveGcloud();
-      // Check auth state
+      gcloud = await this.resolveGcloud();
+    } catch {
+      return { available: false, reason: 'gcloud CLI not found in PATH — install Google Cloud SDK' };
+    }
+
+    try {
       await execFileAsync(gcloud, ['auth', 'print-access-token'], {
         env: { ...process.env },
       });
-      return true;
-    } catch {
-      return false;
+      return { available: true };
+    } catch (err) {
+      return { available: false, reason: `gcloud not authenticated — run 'gcloud auth login': ${err instanceof Error ? err.message : String(err)}` };
     }
   }
 

@@ -21,6 +21,7 @@ export interface CredentialDiagnoseResult {
   } | null;
   matched_rule_index: number | null;
   backend_available: boolean;
+  backend_diagnostic?: string;
 }
 
 export async function credentialDiagnose(
@@ -43,14 +44,17 @@ export async function credentialDiagnose(
   }
 
   let backendAvailable = false;
+  let backendDiagnostic: string | undefined;
   try {
     const backend = registry.getBackend(resolved.backend);
-    backendAvailable = await backend.isAvailable();
+    const health = await backend.checkHealth();
+    backendAvailable = health.available;
+    backendDiagnostic = health.reason;
   } catch {
     // backend not found or unavailable
   }
 
-  return {
+  const result: CredentialDiagnoseResult = {
     host,
     matched_rule: {
       match: resolved.matched_rule.match,
@@ -62,4 +66,6 @@ export async function credentialDiagnose(
     matched_rule_index: resolved.matched_rule_index ?? null,
     backend_available: backendAvailable,
   };
+  if (backendDiagnostic) result.backend_diagnostic = backendDiagnostic;
+  return result;
 }

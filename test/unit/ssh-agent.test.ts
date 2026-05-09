@@ -109,6 +109,52 @@ describe("SshAgentBackend", () => {
     });
   });
 
+  describe("checkHealth", () => {
+    it("should return available when agent has identities", async () => {
+      process.env.SSH_AUTH_SOCK = "/tmp/ssh-agent.sock";
+      (mockExecFile as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        stdout: "2048 SHA256:abc123def456 user@host (RSA)\n",
+        stderr: "",
+      });
+
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(true);
+      expect(health.reason).toBeUndefined();
+    });
+
+    it("should return diagnostic when SSH_AUTH_SOCK not set", async () => {
+      delete process.env.SSH_AUTH_SOCK;
+      Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(false);
+      expect(health.reason).toContain("SSH_AUTH_SOCK");
+    });
+
+    it("should return diagnostic when agent has no identities", async () => {
+      process.env.SSH_AUTH_SOCK = "/tmp/ssh-agent.sock";
+      (mockExecFile as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        stdout: "",
+        stderr: "",
+      });
+
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(false);
+      expect(health.reason).toContain("no identities");
+    });
+
+    it("should return diagnostic when agent is not reachable", async () => {
+      process.env.SSH_AUTH_SOCK = "/tmp/ssh-agent.sock";
+      (mockExecFile as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
+        Object.assign(new Error("agent not running"), { code: 2 }),
+      );
+
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(false);
+      expect(health.reason).toContain("not reachable");
+    });
+  });
+
   describe("getCredential", () => {
     it("should return username from ref and empty password Buffer", async () => {
       const result = await backend.getCredential("admin");

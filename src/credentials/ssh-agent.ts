@@ -4,6 +4,7 @@ import {
   CredentialBackend,
   CredentialResult,
   CredentialMetadata,
+  HealthCheckResult,
 } from "./backend.js";
 
 const execFileAsync = promisify(execFile);
@@ -26,23 +27,31 @@ export class SshAgentBackend implements CredentialBackend {
   private static readonly WINDOWS_PIPE = "\\\\.\\pipe\\openssh-ssh-agent";
 
   async isAvailable(): Promise<boolean> {
-    // Check SSH_AUTH_SOCK is set (or Windows named pipe exists)
-    const sock = this.getAgentSocket();
-    if (!sock) return false;
+    const health = await this.checkHealth();
+    return health.available;
+  }
 
-    // Probe the agent with ssh-add -l to verify it is reachable and has keys
+  async checkHealth(): Promise<HealthCheckResult> {
+    const sock = this.getAgentSocket();
+    if (!sock) {
+      return { available: false, reason: 'SSH_AUTH_SOCK is not set and no agent socket found' };
+    }
+
     try {
       const { stdout } = await execFileAsync("ssh-add", ["-l"], {
         timeout: 5000,
         env: { ...process.env, SSH_AUTH_SOCK: sock },
       });
-      // ssh-add -l exits 0 when identities are present
-      // Output contains lines like: "2048 SHA256:... comment (RSA)"
-      return stdout.trim().length > 0;
-    } catch {
-      // Exit code 1 = agent reachable but no identities
-      // Exit code 2 = agent not reachable
-      return false;
+      if (stdout.trim().length > 0) {
+        return { available: true };
+      }
+      return { available: false, reason: 'ssh-agent is running but has no identities loaded — run \'ssh-add\' to add keys' };
+    } catch (err: unknown) {
+      const exitCode = (err as { code?: number }).code;
+      if (exitCode === 1) {
+        return { available: false, reason: 'ssh-agent is running but has no identities loaded — run \'ssh-add\' to add keys' };
+      }
+      return { available: false, reason: 'ssh-agent is not reachable — is the agent daemon running?' };
     }
   }
 

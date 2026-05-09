@@ -160,8 +160,9 @@ export async function sshExecute(
     try {
       const available = await backend.isAvailable();
       if (!available) {
-        process.stderr.write(`Credential backend "${backendName}" unavailable in ssh_execute\n`);
-        throw new Error(`Credential backend "${backendName}" failed. Check server logs for details.`);
+        const health = await backend.checkHealth();
+        const diagnostic = health.reason ?? 'unknown reason';
+        throw new Error(`Credential backend "${backendName}" is not available: ${diagnostic}`);
       }
       const cred = await backend.getCredential(credential_ref);
       resolvedUsername = cred.username || resolvedUsername;

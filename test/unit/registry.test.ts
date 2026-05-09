@@ -4,16 +4,22 @@ import type {
   CredentialBackend,
   CredentialResult,
   CredentialMetadata,
+  HealthCheckResult,
 } from "../../src/credentials/backend.js";
 
 /** Create a mock backend for testing */
 function createMockBackend(
   name: string,
   available: boolean = true,
+  reason?: string,
 ): CredentialBackend {
   return {
     name,
     isAvailable: vi.fn(async () => available),
+    checkHealth: vi.fn(async (): Promise<HealthCheckResult> => {
+      if (available) return { available: true };
+      return { available: false, reason: reason ?? `${name} is not available` };
+    }),
     getCredential: vi.fn(async (): Promise<CredentialResult> => ({
       username: `${name}-user`,
       password: Buffer.from(`${name}-pass`),
@@ -61,20 +67,41 @@ describe("CredentialRegistry", () => {
   describe("discoverAvailability", () => {
     it("should probe all backends and return status", async () => {
       registry.register(createMockBackend("env", true));
-      registry.register(createMockBackend("bitwarden", false));
+      registry.register(createMockBackend("bitwarden", false, "bw CLI not found"));
 
       const results = await registry.discoverAvailability();
       expect(results).toEqual([
         { name: "env", available: true },
-        { name: "bitwarden", available: false },
+        { name: "bitwarden", available: false, reason: "bw CLI not found" },
       ]);
     });
 
-    it("should handle isAvailable() throwing as unavailable", async () => {
+    it("should include reason in status when backend is unavailable", async () => {
+      registry.register(createMockBackend("azure", false, "Azure CLI (az) not found in PATH"));
+
+      const results = await registry.discoverAvailability();
+      expect(results).toHaveLength(1);
+      expect(results[0].available).toBe(false);
+      expect(results[0].reason).toBe("Azure CLI (az) not found in PATH");
+    });
+
+    it("should not include reason when backend is available", async () => {
+      registry.register(createMockBackend("env", true));
+
+      const results = await registry.discoverAvailability();
+      expect(results).toHaveLength(1);
+      expect(results[0].available).toBe(true);
+      expect(results[0].reason).toBeUndefined();
+    });
+
+    it("should handle checkHealth() throwing as unavailable with reason", async () => {
       const broken: CredentialBackend = {
         name: "broken",
         isAvailable: vi.fn(async () => {
           throw new Error("crash");
+        }),
+        checkHealth: vi.fn(async () => {
+          throw new Error("health check exploded");
         }),
         getCredential: vi.fn(),
         getMetadata: vi.fn(),
@@ -83,26 +110,32 @@ describe("CredentialRegistry", () => {
       registry.register(broken);
 
       const results = await registry.discoverAvailability();
-      expect(results).toEqual([{ name: "broken", available: false }]);
+      expect(results).toEqual([
+        { name: "broken", available: false, reason: "Health check threw: health check exploded" },
+      ]);
     });
 
-    it("should cache availability results", async () => {
+    it("should cache availability and diagnostic results", async () => {
       registry.register(createMockBackend("env", true));
+      registry.register(createMockBackend("bw", false, "vault locked"));
       await registry.discoverAvailability();
       expect(registry.isAvailable("env")).toBe(true);
+      expect(registry.isAvailable("bw")).toBe(false);
+      expect(registry.getDiagnostic("env")).toBeUndefined();
+      expect(registry.getDiagnostic("bw")).toBe("vault locked");
     });
   });
 
   describe("listBackends", () => {
     it("should list all registered backends with availability", async () => {
       registry.register(createMockBackend("env", true));
-      registry.register(createMockBackend("bitwarden", false));
+      registry.register(createMockBackend("bitwarden", false, "bw not found"));
       await registry.discoverAvailability();
 
       const list = registry.listBackends();
       expect(list).toEqual([
         { name: "env", available: true },
-        { name: "bitwarden", available: false },
+        { name: "bitwarden", available: false, reason: "bw not found" },
       ]);
     });
 
@@ -186,6 +219,24 @@ describe("CredentialRegistry", () => {
 
       expect(registry.isAvailable("env")).toBe(true);
       expect(registry.isAvailable("bw")).toBe(false);
+    });
+  });
+
+  describe("getDiagnostic", () => {
+    it("should return undefined for unregistered backend", () => {
+      expect(registry.getDiagnostic("ghost")).toBeUndefined();
+    });
+
+    it("should return undefined for available backend", async () => {
+      registry.register(createMockBackend("env", true));
+      await registry.discoverAvailability();
+      expect(registry.getDiagnostic("env")).toBeUndefined();
+    });
+
+    it("should return reason for unavailable backend", async () => {
+      registry.register(createMockBackend("bw", false, "vault is locked"));
+      await registry.discoverAvailability();
+      expect(registry.getDiagnostic("bw")).toBe("vault is locked");
     });
   });
 });

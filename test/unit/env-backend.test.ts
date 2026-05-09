@@ -124,6 +124,11 @@ describe("EnvCredentialBackend", () => {
       it("should throw on whitespace-only string", () => {
         expect(() => backend.parseRef("   ")).toThrow("Invalid env ref: empty string");
       });
+  describe("checkHealth", () => {
+    it("should return available: true with no reason", async () => {
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(true);
+      expect(health.reason).toBeUndefined();
     });
   });
 
