@@ -185,10 +185,14 @@ async function parseSshConfigFile(
     source: string;
   } | null = null;
 
-  // Relative path for source display
-  const sourceDisplay = filePath.startsWith(ctx.home + '/')
-    ? '~/' + filePath.slice(ctx.home.length + 1)
-    : filePath;
+  // Relative path for source display — normalize to tilde form cross-platform.
+  // On Windows, ctx.home uses backslashes; we normalize both to forward slashes
+  // before comparing so the result is always in POSIX tilde form (~/.ssh/...).
+  const normFilePath = filePath.replace(/\\/g, '/');
+  const normHome = ctx.home.replace(/\\/g, '/');
+  const sourceDisplay = normFilePath.startsWith(normHome + '/')
+    ? '~/' + normFilePath.slice(normHome.length + 1)
+    : normFilePath;
 
   const flushBlock = () => {
     if (!currentBlock) return;
