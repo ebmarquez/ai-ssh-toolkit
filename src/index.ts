@@ -23,10 +23,16 @@ import { sshSessionOpen } from './tools/ssh-session-open.js';
 import { sshSessionExecute } from './tools/ssh-session-execute.js';
 import { sshSessionClose } from './tools/ssh-session-close.js';
 import { SessionStore } from './ssh/session-store.js';
+import { StreamStore } from './ssh/stream-store.js';
 import { sshMultiExecute } from './tools/ssh-multi-execute.js';
 import { credentialGet } from './tools/credential-get.js';
 import { credentialListBackends } from './tools/credential-list.js';
 import { sshCheckHost } from './tools/ssh-check.js';
+import { sshHostInfo } from './tools/ssh-host-info.js';
+import { sshHostKeyTrust } from './tools/ssh-host-key-trust.js';
+import { sshHostKeyList } from './tools/ssh-host-key-list.js';
+import { sshHostKeyRemove } from './tools/ssh-host-key-remove.js';
+import { sshUpload, sshDownload, sshSftpList } from './tools/ssh-transfer.js';
 import { versionCheck } from './tools/version-check.js';
 import { credentialDiagnose } from './tools/credential-diagnose.js';
 import { sshForwardLocal } from './tools/ssh-forward-local.js';
@@ -36,14 +42,24 @@ import { sshForwardClose } from './tools/ssh-forward-close.js';
 import { sshForwardList } from './tools/ssh-forward-list.js';
 import { sshListHosts } from './tools/ssh-list-hosts.js';
 import { destroyAllForwards } from './ssh/forward-manager.js';
+import { sshStreamRead } from './tools/ssh-stream-read.js';
+import { sshStreamCancel } from './tools/ssh-stream-cancel.js';
+import { sshStreamList } from './tools/ssh-stream-list.js';
 import { CredentialRegistry } from './credentials/registry.js';
 import { CredentialMap } from './credentials/credential-map.js';
+import { HostKeyStore } from './security/host-key-store.js';
 import { BitwardenBackend } from './credentials/bitwarden.js';
 import { AzureKeyVaultBackend } from './credentials/azure-keyvault.js';
 import { EnvCredentialBackend } from './credentials/env.js';
 import { GoogleSecretManagerBackend } from './credentials/google-secret-manager.js';
 import { SshAgentBackend } from './credentials/ssh-agent.js';
 import { AuditLogger } from './audit/audit-logger.js';
+import { SessionReuseManager, getSessionReuseTtl } from './ssh/session-reuse.js';
+import { OnePasswordBackend } from './credentials/onepassword.js';
+import { HashiCorpVaultBackend } from './credentials/hashicorp-vault.js';
+import { AwsSecretsManagerBackend } from './credentials/aws-secretsmanager.js';
+import { MacOsKeychainBackend } from './credentials/macos-keychain.js';
+import { WindowsCredentialBackend } from './credentials/windows-credential.js';
 import { readFileSync } from 'fs';
 
 function getPackageVersion(): string {
@@ -73,16 +89,24 @@ registry.register(new AzureKeyVaultBackend());
 registry.register(new EnvCredentialBackend());
 registry.register(new GoogleSecretManagerBackend());
 registry.register(new SshAgentBackend());
+registry.register(new OnePasswordBackend());
+registry.register(new HashiCorpVaultBackend());
+registry.register(new AwsSecretsManagerBackend());
+registry.register(new MacOsKeychainBackend());
+registry.register(new WindowsCredentialBackend());
 
 const sessionStore = new SessionStore();
+const streamStore = new StreamStore();
 const credentialMap = new CredentialMap();
 const auditLogger = new AuditLogger();
+const hostKeyStore = new HostKeyStore();
+const reuseManager = new SessionReuseManager(getSessionReuseTtl());
 
 // Graceful shutdown: destroy all sessions and forwards before exiting
-const shutdown = () => { destroyAllForwards(); sessionStore.destroy(); process.exit(0); };
+const shutdown = () => { destroyAllForwards(); streamStore.destroy(); sessionStore.destroy(); process.exit(0); };
 process.once('SIGINT', shutdown);
 process.once('SIGTERM', shutdown);
-process.on('exit', () => { destroyAllForwards(); sessionStore.destroy(); });
+process.on('exit', () => { destroyAllForwards(); streamStore.destroy(); sessionStore.destroy(); });
 
 // ── ssh_execute ──────────────────────────────────────────────────────────────
 server.tool(
@@ -101,24 +125,34 @@ server.tool(
     timeout_ms: z.number().int().positive().optional().describe('Connection + command timeout in milliseconds (default: 30000)'),
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
     dry_run: z.boolean().optional().describe('When true, resolve host/credentials/args but do NOT connect. Returns a preview of the SSH invocation.'),
+    max_output_bytes: z.number().int().positive().optional().describe('Maximum output size in bytes before truncation (default: 65536 = 64 KB). Output exceeding this limit is saved to a file and a head/tail preview is returned inline.'),
+    output_to_file: z.string().optional().describe('If provided, always write full output to this file path (plus return head/tail inline).'),
+    jump_hosts: z.array(z.string()).optional().describe('ProxyJump chain: list of bastion/jump hosts, e.g. ["bastion1.example.com","bastion2.internal"]. Translated to ssh -J flag.'),
+    reuse_session: z.boolean().optional().describe('When true, reuse an existing SSH ControlMaster connection if available. When false, force a fresh connection. Default follows AI_SSH_SESSION_REUSE_TTL_SECONDS config.'),
+    stream: z.boolean().optional().describe('When true, run asynchronously and return a stream_id for polling output via ssh_stream_read.'),
+    sudo: z.boolean().optional().describe('When true, run the command under sudo. Uses sudo -n (non-interactive) if no sudo_password_ref is provided.'),
+    sudo_password_ref: z.object({
+      backend: z.string().describe('Credential backend name'),
+      ref: z.string().describe('Credential reference string'),
+    }).optional().describe('Credential reference for the sudo password (separate from login credential)'),
   },
   async (input) => {
     const start = Date.now();
     try {
-      const result = await sshExecute(registry, input, credentialMap);
-      auditLogger.log({
-        tool: 'ssh_execute',
-        host: input.host,
-        username: input.username ?? '',
-        credential_backend: input.credential_backend,
-        command: input.command,
-        ...(!('dry_run' in result && result.dry_run) && {
-          exit_code: (result as { exit_code: number }).exit_code,
-          stdout_bytes: Buffer.byteLength((result as { output: string }).output, 'utf-8'),
-        }),
-        duration_ms: Date.now() - start,
-        success: true,
-      });
+      const result = await sshExecute(registry, input, credentialMap, hostKeyStore, reuseManager, streamStore);
+      if ('output' in result && 'exit_code' in result) {
+        auditLogger.log({
+          tool: 'ssh_execute',
+          host: input.host,
+          username: input.username ?? '',
+          credential_backend: input.credential_backend,
+          command: input.command,
+          exit_code: result.exit_code,
+          duration_ms: Date.now() - start,
+          stdout_bytes: Buffer.byteLength(result.output, 'utf-8'),
+          success: true,
+        });
+      }
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       auditLogger.log({
@@ -219,6 +253,7 @@ server.tool(
     timeout_ms: z.number().int().positive().optional().describe('Connection timeout in milliseconds (default: 5000)'),
     mode: z.enum(['tcp', 'banner', 'auth']).optional().describe("Check mode: 'tcp' (TCP connect only), 'banner' (TCP + SSH banner read, default), 'auth' (full ssh binary auth with BatchMode=yes)"),
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
+    jump_hosts: z.array(z.string()).optional().describe('ProxyJump chain: list of bastion/jump hosts. Used in auth mode to route through bastions. Translated to ssh -J flag.'),
   },
   async (input) => {
     const start = Date.now();
@@ -265,19 +300,22 @@ server.tool(
     idle_timeout_ms: z.number().int().positive().optional().describe('Inactivity auto-close timeout in milliseconds (default: 300000)'),
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
     dry_run: z.boolean().optional().describe('When true, resolve host/credentials/args but do NOT connect. Returns a preview of the SSH invocation.'),
+    jump_hosts: z.array(z.string()).optional().describe('ProxyJump chain: list of bastion/jump hosts, e.g. ["bastion1.example.com"]. Translated to ssh -J flag.'),
   },
   async (input) => {
     const start = Date.now();
     try {
-      const result = await sshSessionOpen(registry, sessionStore, input, credentialMap);
-      auditLogger.log({
-        tool: 'ssh_session_open',
-        host: input.host,
-        username: !('dry_run' in result && result.dry_run) ? (result as { username: string }).username : '',
-        credential_backend: input.credential_backend,
-        duration_ms: Date.now() - start,
-        success: true,
-      });
+      const result = await sshSessionOpen(registry, sessionStore, input, credentialMap, hostKeyStore);
+      if ('username' in result) {
+        auditLogger.log({
+          tool: 'ssh_session_open',
+          host: input.host,
+          username: result.username,
+          credential_backend: input.credential_backend,
+          duration_ms: Date.now() - start,
+          success: true,
+        });
+      }
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       auditLogger.log({
@@ -304,22 +342,36 @@ server.tool(
     session_id: z.string().describe('Session ID returned by ssh_session_open'),
     command: z.string().describe('Command to execute in the session'),
     timeout_ms: z.number().int().positive().optional().describe('Command timeout in milliseconds (default: 30000)'),
+    max_output_bytes: z.number().int().positive().optional().describe('Maximum output size in bytes before truncation (default: 65536 = 64 KB). Output exceeding this limit is saved to a file and a head/tail preview is returned inline.'),
+    output_to_file: z.string().optional().describe('If provided, always write full output to this file path (plus return head/tail inline).'),
+    stream: z.boolean().optional().describe('When true, run asynchronously and return a stream_id for polling output via ssh_stream_read.'),
+    sudo: z.boolean().optional().describe('When true, run the command under sudo. Uses sudo -n (non-interactive) if no sudo_password_ref is provided.'),
+    sudo_password_ref: z.object({
+      backend: z.string().describe('Credential backend name'),
+      ref: z.string().describe('Credential reference string'),
+    }).optional().describe('Credential reference for the sudo password'),
+    enable_password_ref: z.object({
+      backend: z.string().describe('Credential backend name'),
+      ref: z.string().describe('Credential reference string'),
+    }).optional().describe('Credential reference for Cisco IOS enable mode password'),
   },
   async (input) => {
     const start = Date.now();
     const session = sessionStore.get(input.session_id);
     try {
-      const result = await sshSessionExecute(sessionStore, input);
-      auditLogger.log({
-        tool: 'ssh_session_execute',
-        host: session?.host ?? '',
-        username: session?.username ?? '',
-        command: input.command,
-        exit_code: result.exit_code,
-        duration_ms: Date.now() - start,
-        stdout_bytes: Buffer.byteLength(result.output, 'utf-8'),
-        success: true,
-      });
+      const result = await sshSessionExecute(sessionStore, input, streamStore, registry);
+      if ('output' in result && 'exit_code' in result) {
+        auditLogger.log({
+          tool: 'ssh_session_execute',
+          host: session?.host ?? '',
+          username: session?.username ?? '',
+          command: input.command,
+          exit_code: result.exit_code,
+          duration_ms: Date.now() - start,
+          stdout_bytes: Buffer.byteLength(result.output, 'utf-8'),
+          success: true,
+        });
+      }
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       auditLogger.log({
@@ -442,6 +494,54 @@ server.tool(
   }
 );
 
+// ── ssh_stream_read ──────────────────────────────────────────────────────────
+server.tool(
+  'ssh_stream_read',
+  'Read output chunks from a streaming SSH command started with stream=true.',
+  {
+    stream_id: z.string().describe('Stream ID returned by ssh_execute or ssh_session_execute with stream=true'),
+    offset: z.number().int().min(0).optional().describe('Chunk offset to read from (default: 0). Use the offset returned by previous reads to get only new chunks.'),
+  },
+  async (input) => {
+    try {
+      const result = sshStreamRead(streamStore, input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_upload ────────────────────────────────────────────────────────────────
+server.tool(
+  'ssh_upload',
+  'Upload a local file to a remote host via SFTP.',
+  {
+    host: z.string().describe('Hostname or IP address of the remote target'),
+    local_path: z.string().describe('Path to the local file to upload'),
+    remote_path: z.string().describe('Destination path on the remote host'),
+    username: z.string().optional().describe('SSH username (overrides credential ref username and ~/.ssh/config User)'),
+    credential_ref: z.string().optional().describe('Credential reference string understood by the selected backend'),
+    credential_backend: z.string().optional().describe('Name of the credential backend (default: google-secret-manager)'),
+    port: z.number().int().min(1).max(65535).optional().describe('SSH port (default: 22)'),
+    timeout_ms: z.number().int().positive().optional().describe('Transfer timeout in milliseconds (default: 30000)'),
+  },
+  async (input) => {
+    try {
+      const result = await sshUpload(registry, input, credentialMap);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
 // ── ssh_forward_remote ───────────────────────────────────────────────────────
 server.tool(
   'ssh_forward_remote',
@@ -460,6 +560,53 @@ server.tool(
   async (input) => {
     try {
       const result = await sshForwardRemote(registry, input, credentialMap);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_stream_cancel ────────────────────────────────────────────────────────
+server.tool(
+  'ssh_stream_cancel',
+  'Cancel a running streaming SSH command.',
+  {
+    stream_id: z.string().describe('Stream ID of the stream to cancel'),
+  },
+  async (input) => {
+    try {
+      const result = sshStreamCancel(streamStore, input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_download ─────────────────────────────────────────────────────────────
+server.tool(
+  'ssh_download',
+  'Download a remote file to the local filesystem via SFTP.',
+  {
+    host: z.string().describe('Hostname or IP address of the remote target'),
+    remote_path: z.string().describe('Path to the file on the remote host'),
+    local_path: z.string().describe('Destination path on the local filesystem'),
+    username: z.string().optional().describe('SSH username (overrides credential ref username and ~/.ssh/config User)'),
+    credential_ref: z.string().optional().describe('Credential reference string understood by the selected backend'),
+    credential_backend: z.string().optional().describe('Name of the credential backend (default: google-secret-manager)'),
+    port: z.number().int().min(1).max(65535).optional().describe('SSH port (default: 22)'),
+    timeout_ms: z.number().int().positive().optional().describe('Transfer timeout in milliseconds (default: 30000)'),
+  },
+  async (input) => {
+    try {
+      const result = await sshDownload(registry, input, credentialMap);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
@@ -524,6 +671,51 @@ server.tool(
   async () => {
     try {
       const result = sshForwardList();
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_stream_list ──────────────────────────────────────────────────────────
+server.tool(
+  'ssh_stream_list',
+  'List all active and recent streaming SSH commands.',
+  {},
+  async () => {
+    try {
+      const result = sshStreamList(streamStore);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_sftp_list ────────────────────────────────────────────────────────────
+server.tool(
+  'ssh_sftp_list',
+  'List remote directory contents via SFTP.',
+  {
+    host: z.string().describe('Hostname or IP address of the remote target'),
+    remote_path: z.string().describe('Path to the remote directory to list'),
+    recursive: z.boolean().optional().describe('When true, list directory contents recursively (default: false)'),
+    username: z.string().optional().describe('SSH username (overrides credential ref username and ~/.ssh/config User)'),
+    credential_ref: z.string().optional().describe('Credential reference string understood by the selected backend'),
+    credential_backend: z.string().optional().describe('Name of the credential backend (default: google-secret-manager)'),
+    port: z.number().int().min(1).max(65535).optional().describe('SSH port (default: 22)'),
+    timeout_ms: z.number().int().positive().optional().describe('Operation timeout in milliseconds (default: 30000)'),
+  },
+  async (input) => {
+    try {
+      const result = await sshSftpList(registry, input, credentialMap);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
@@ -589,6 +781,92 @@ server.tool(
       }
       const records = auditLogger.readLastRecords(input.limit ?? 50);
       return { content: [{ type: 'text' as const, text: JSON.stringify(records, null, 2) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_host_info ────────────────────────────────────────────────────────────
+server.tool(
+  'ssh_host_info',
+  'Retrieve SSH host information (banner, OS hint, host key fingerprints) without authentication.',
+  {
+    host: z.string().describe('Hostname or IP address to probe'),
+    port: z.number().int().min(1).max(65535).optional().describe('SSH port (default: 22)'),
+    timeout_ms: z.number().int().positive().optional().describe('Timeout in milliseconds (default: 5000)'),
+    use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config. Set false to skip.'),
+  },
+  async (input) => {
+    try {
+      const result = await sshHostInfo(input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_host_key_trust ───────────────────────────────────────────────────────
+server.tool(
+  'ssh_host_key_trust',
+  'Pin or re-pin a host key fingerprint. If fingerprint is omitted, fetches live keys from the host.',
+  {
+    host: z.string().describe('Hostname or IP address to trust'),
+    port: z.number().int().min(1).max(65535).optional().describe('SSH port (default: 22)'),
+    fingerprint: z.string().optional().describe('SHA256 fingerprint to pin (e.g. "SHA256:abc..."). If omitted, fetches live keys.'),
+    key_type: z.string().optional().describe('Key type when pinning a specific fingerprint (e.g. "ssh-ed25519")'),
+    use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config. Set false to skip.'),
+  },
+  async (input) => {
+    try {
+      const result = await sshHostKeyTrust(hostKeyStore, input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_host_key_list ────────────────────────────────────────────────────────
+server.tool(
+  'ssh_host_key_list',
+  'List all pinned host key fingerprints.',
+  {},
+  async () => {
+    try {
+      const result = sshHostKeyList(hostKeyStore);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_host_key_remove ──────────────────────────────────────────────────────
+server.tool(
+  'ssh_host_key_remove',
+  'Remove a pinned host key, forgetting a previously trusted host.',
+  {
+    host: z.string().describe('Hostname or IP address to remove'),
+    port: z.number().int().min(1).max(65535).optional().describe('SSH port (default: 22)'),
+  },
+  async (input) => {
+    try {
+      const result = sshHostKeyRemove(hostKeyStore, input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],

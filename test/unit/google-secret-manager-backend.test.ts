@@ -75,6 +75,30 @@ describe('GoogleSecretManagerBackend', () => {
     });
   });
 
+  describe('checkHealth', () => {
+    it('returns available when gcloud is authenticated', async () => {
+      setupMock({ 'auth print-access-token': 'ya29.token' });
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(true);
+      expect(health.reason).toBeUndefined();
+    });
+
+    it('returns diagnostic when gcloud CLI not found', async () => {
+      mockExecFileAsync.mockRejectedValue(new Error('gcloud not found'));
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(false);
+      expect(health.reason).toContain('gcloud CLI not found');
+    });
+
+    it('returns diagnostic when gcloud not authenticated', async () => {
+      // which gcloud succeeds, but auth fails
+      setupMock({ 'auth print-access-token': new Error('not authenticated') });
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(false);
+      expect(health.reason).toContain('gcloud auth login');
+    });
+  });
+
   // ── getCredential - base64 decode ────────────────────────────────────────
 
   describe('getCredential - base64 decode', () => {

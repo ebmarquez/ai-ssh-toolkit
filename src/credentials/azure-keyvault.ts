@@ -3,6 +3,7 @@ import {
   CredentialBackend,
   CredentialResult,
   CredentialMetadata,
+  HealthCheckResult,
 } from "./backend.js";
 import { resolveCliPath } from "../utils/cli-resolver.js";
 
@@ -39,14 +40,24 @@ export class AzureKeyVaultBackend implements CredentialBackend {
   private stagedBuffers: Buffer[] = [];
 
   async isAvailable(): Promise<boolean> {
+    const health = await this.checkHealth();
+    return health.available;
+  }
+
+  async checkHealth(): Promise<HealthCheckResult> {
     try {
       this.cliPath = resolveCliPath("az");
+    } catch {
+      return { available: false, reason: 'Azure CLI (az) not found in PATH' };
+    }
+
+    try {
       await execFileAsync(this.cliPath, ["account", "show"], {
         timeout: 10000,
       });
-      return true;
-    } catch {
-      return false;
+      return { available: true };
+    } catch (err) {
+      return { available: false, reason: `Azure CLI not authenticated — run 'az login' first: ${err instanceof Error ? err.message : String(err)}` };
     }
   }
 

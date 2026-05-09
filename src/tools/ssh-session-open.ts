@@ -13,6 +13,8 @@ import { detectPasswordPrompt, detectPrompt } from '../ssh/prompt-detector.js';
 import { SSH_PTY_OPTIONS } from '../ssh/pty-options.js';
 import { resolveSshConfig } from '../ssh/ssh-config-reader.js';
 import type { CredentialMap } from '../credentials/credential-map.js';
+import type { HostKeyStore } from '../security/host-key-store.js';
+import { verifyHostKey } from '../security/host-key-verify.js';
 
 export interface SshSessionOpenInput {
   host: string;
@@ -34,6 +36,8 @@ export interface SshSessionOpenInput {
    * Returns a structured preview of what would be executed.
    */
   dry_run?: boolean;
+  /** ProxyJump chain — translated to `ssh -J host1,host2,...`. */
+  jump_hosts?: string[];
 }
 
 export interface SshSessionOpenResult {
@@ -59,6 +63,7 @@ export async function sshSessionOpen(
   sessionStore: SessionStore,
   input: SshSessionOpenInput,
   credentialMap: CredentialMap,
+  hostKeyStore?: HostKeyStore,
 ): Promise<SshSessionOpenResult | SshSessionOpenDryRunResult> {
   const {
     host,
@@ -186,6 +191,11 @@ export async function sshSessionOpen(
     );
   }
 
+  // ── Host key verification (TOFU) ──────────────────────────────────────────
+  if (hostKeyStore) {
+    await verifyHostKey(hostKeyStore, host, resolvedPort ?? 22);
+  }
+
   // ── Dynamic import (allows mocking in tests) ─────────────────────────────
   const { default: pty } = await import('node-pty');
 
@@ -213,6 +223,9 @@ export async function sshSessionOpen(
   ];
   if (resolvedPort !== undefined && resolvedPort !== 22) {
     sshArgs.push('-p', String(resolvedPort));
+  }
+  if (input.jump_hosts && input.jump_hosts.length > 0) {
+    sshArgs.push('-J', input.jump_hosts.join(','));
   }
   sshArgs.push(`${resolvedUsername}@${host}`);
 

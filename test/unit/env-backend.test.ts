@@ -127,6 +127,14 @@ describe("EnvCredentialBackend", () => {
     });
   });
 
+  describe("checkHealth", () => {
+    it("should return available: true with no reason", async () => {
+      const health = await backend.checkHealth();
+      expect(health.available).toBe(true);
+      expect(health.reason).toBeUndefined();
+    });
+  });
+
   describe("getCredential", () => {
     it("should return username and password from legacy colon format", async () => {
       const result = await backend.getCredential("TEST_USER:TEST_PASS");

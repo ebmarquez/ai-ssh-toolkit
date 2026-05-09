@@ -7,6 +7,17 @@ import type { CredentialRegistry } from '../credentials/registry.js';
 import { runSshSession } from '../ssh/pty-manager.js';
 import { resolveSshConfig } from '../ssh/ssh-config-reader.js';
 import type { CredentialMap } from '../credentials/credential-map.js';
+import { applyOutputLimit } from '../utils/output-limiter.js';
+import type { HostKeyStore } from '../security/host-key-store.js';
+import { verifyHostKey } from '../security/host-key-verify.js';
+import type { SessionReuseManager } from '../ssh/session-reuse.js';
+import type { StreamStore } from '../ssh/stream-store.js';
+import {
+  type EscalationCredentialRef,
+  fetchEscalationCredential,
+  buildSudoCommand,
+  validateEscalationInputs,
+} from '../ssh/privilege-escalation.js';
 
 export interface SshExecuteInput {
   host: string;
@@ -28,11 +39,35 @@ export interface SshExecuteInput {
    * Returns a structured preview of what would be executed.
    */
   dry_run?: boolean;
+  /** Maximum output bytes before truncation (default: 65 536 = 64 KB). */
+  max_output_bytes?: number;
+  /** If provided, always write full output to this file path. */
+  output_to_file?: string;
+  /** ProxyJump chain — translated to `ssh -J host1,host2,...`. */
+  jump_hosts?: string[];
+  /**
+   * When true, reuse an existing SSH ControlMaster connection if available.
+   * When false, force a fresh connection. When undefined, follows the
+   * AI_SSH_SESSION_REUSE_TTL_SECONDS config (enabled by default).
+   */
+  reuse_session?: boolean;
+  /** When true, run the command asynchronously and return a stream_id for polling. */
+  stream?: boolean;
+  /** When true, run the command under sudo. Uses sudo -n (non-interactive)
+   *  if no sudo_password_ref is provided. */
+  sudo?: boolean;
+  /** Credential ref for the sudo password (separate from login credential). */
+  sudo_password_ref?: EscalationCredentialRef;
 }
 
 export interface SshExecuteResult {
   output: string;
   exit_code: number | null;
+  truncated?: boolean;
+  total_bytes?: number;
+  head?: string;
+  tail?: string;
+  saved_path?: string;
 }
 
 export interface SshExecuteDryRunResult {
@@ -46,11 +81,19 @@ export interface SshExecuteDryRunResult {
   jump_hosts_resolved: string | null;
 }
 
+export interface SshExecuteStreamResult {
+  stream_id: string;
+  status: 'running';
+}
+
 export async function sshExecute(
   registry: CredentialRegistry,
   input: SshExecuteInput,
   credentialMap: CredentialMap,
-): Promise<SshExecuteResult | SshExecuteDryRunResult> {
+  hostKeyStore?: HostKeyStore,
+  reuseManager?: SessionReuseManager,
+  streamStore?: StreamStore,
+): Promise<SshExecuteResult | SshExecuteDryRunResult | SshExecuteStreamResult> {
   let {
     credential_ref,
     credential_backend,
@@ -62,7 +105,11 @@ export async function sshExecute(
     platform = 'auto',
     timeout_ms = 30000,
     dry_run = false,
+    stream = false,
   } = input;
+
+  // Validate escalation input combinations
+  validateEscalationInputs(input);
 
   // Validate required inputs before any lookups
   if (!host) throw new Error('host is required');
@@ -150,8 +197,9 @@ export async function sshExecute(
     try {
       const available = await backend.isAvailable();
       if (!available) {
-        process.stderr.write(`Credential backend "${backendName}" unavailable in ssh_execute\n`);
-        throw new Error(`Credential backend "${backendName}" failed. Check server logs for details.`);
+        const health = await backend.checkHealth();
+        const diagnostic = health.reason ?? 'unknown reason';
+        throw new Error(`Credential backend "${backendName}" is not available: ${diagnostic}`);
       }
       const cred = await backend.getCredential(credential_ref);
       resolvedUsername = cred.username || resolvedUsername;
@@ -171,20 +219,91 @@ export async function sshExecute(
   // ssh config resolution first (if use_ssh_config is enabled) and throw with
   // a better error message if username resolution still fails.
 
+  // ── Privilege escalation ─────────────────────────────────────────────────
+  let sudoPasswordBuffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+  let finalCommand = command;
+
+  if (input.sudo) {
+    if (input.sudo_password_ref) {
+      sudoPasswordBuffer = await fetchEscalationCredential(registry, input.sudo_password_ref);
+      finalCommand = buildSudoCommand(command, true);
+    } else {
+      finalCommand = buildSudoCommand(command, false);
+    }
+  }
+
+
+  // Host key verification (TOFU)
+  if (hostKeyStore) {
+    await verifyHostKey(hostKeyStore, host);
+  }
+
+  // Determine whether to use session reuse (ControlMaster)
+  const useReuse = input.reuse_session ?? (reuseManager?.isEnabled() ?? false);
+  const extraSshArgs = (useReuse && reuseManager)
+    ? reuseManager.getControlMasterArgs()
+    : [];
+
   // Run the PTY session
-  try {
-    const result = await runSshSession({
+  if (stream && streamStore) {
+    const streamId = crypto.randomUUID();
+    const abortController = new AbortController();
+    streamStore.create(streamId, host, command, () => abortController.abort());
+
+    // Use a longer default timeout for streaming (5 minutes)
+    const effectiveTimeout = input.timeout_ms ?? 300_000;
+
+    const promise = runSshSession({
       host,
       username: resolvedUsername || undefined,
       password: passwordBuffer,
       command,
       platform,
+      timeout_ms: effectiveTimeout,
+      use_ssh_config: input.use_ssh_config ?? true,
+      onData: (data) => streamStore.appendChunk(streamId, data, 'stdout'),
+      abortSignal: abortController.signal,
+    });
+
+    // Handle completion/failure in the background; clean up password
+    promise
+      .then((result) => streamStore.complete(streamId, result.exit_code))
+      .catch((err) => streamStore.fail(streamId, err instanceof Error ? err.message : String(err)))
+      .finally(() => passwordBuffer.fill(0));
+
+    return { stream_id: streamId, status: 'running' as const };
+  }
+
+  // Non-streaming path (unchanged)
+  try {
+    const result = await runSshSession({
+      host,
+      username: resolvedUsername || undefined,
+      password: passwordBuffer,
+      command: finalCommand,
+      platform,
       timeout_ms,
       use_ssh_config: input.use_ssh_config ?? true,
+      jump_hosts: input.jump_hosts,
+      sudo_password: sudoPasswordBuffer.length > 0 ? sudoPasswordBuffer : undefined,
+      extraSshArgs,
     });
-    return result;
+
+    // Record successful connection for future reuse
+    if (useReuse && reuseManager && resolvedUsername) {
+      reuseManager.recordActivity(host, resolvedUsername);
+    }
+
+    // Apply output limiting
+    const limited = await applyOutputLimit(result.output, {
+      max_output_bytes: input.max_output_bytes,
+      output_to_file: input.output_to_file,
+    });
+
+    return { ...result, ...limited };
   } finally {
-    // Zero-fill password buffer after PTY session completes (success or failure)
+    // Zero-fill password buffers after PTY session completes (success or failure)
     passwordBuffer.fill(0);
+    sudoPasswordBuffer.fill(0);
   }
 }

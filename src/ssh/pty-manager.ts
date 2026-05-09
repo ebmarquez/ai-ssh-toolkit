@@ -10,6 +10,7 @@ import { detectPasswordPrompt, detectPrompt, type PlatformHint } from './prompt-
 import { scrubOutput } from './output-scrubber.js';
 import { SSH_PTY_OPTIONS } from './pty-options.js';
 import { resolveSshConfig } from './ssh-config-reader.js';
+import { detectSudoPrompt, isSudoPasswordRequired } from './privilege-escalation.js';
 
 export interface PtySessionOptions {
   host: string;
@@ -23,6 +24,8 @@ export interface PtySessionOptions {
   timeout_ms?: number;
   /** SSH port override. When omitted, resolved from ~/.ssh/config or defaults to 22. */
   port?: number;
+  /** ProxyJump chain — translated to `ssh -J host1,host2,...`. */
+  jump_hosts?: string[];
   /**
    * When true (default), resolve ~/.ssh/config for the given host alias using
    * `ssh -G <host>` and apply User, Port, IdentityFile, ProxyJump, etc. as
@@ -30,6 +33,18 @@ export interface PtySessionOptions {
    * Set to false to skip config lookup entirely.
    */
   use_ssh_config?: boolean;
+  /** Extra SSH CLI args (e.g. ControlMaster options) prepended to the arg list. */
+  extraSshArgs?: string[];
+  /** Optional callback invoked on each PTY data event (for streaming). */
+  onData?: (data: string) => void;
+  /** Optional AbortSignal to cancel the session externally. */
+  abortSignal?: AbortSignal;
+  /**
+   * Sudo password as Buffer — used when the command is wrapped with `sudo -S`.
+   * Piped to stdin when the custom sudo prompt token is detected.
+   * Zeroed by caller after this function resolves/rejects.
+   */
+  sudo_password?: Buffer;
 }
 
 export interface PtySessionResult {
@@ -57,6 +72,8 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
     platform = 'auto',
     timeout_ms = 30000,
     use_ssh_config = true,
+    extraSshArgs = [],
+    sudo_password,
   } = opts;
 
   // ── SSH config resolution ─────────────────────────────────────────────────
@@ -87,12 +104,16 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
   // Build SSH args — pass the original host alias so SSH can apply its own
   // config (HostName, IdentityFile, ProxyJump, Ciphers, etc.) naturally.
   const sshArgs: string[] = [
+    ...extraSshArgs,
     '-o', 'StrictHostKeyChecking=accept-new',
     '-o', 'NumberOfPasswordPrompts=1',
     '-o', 'ConnectTimeout=10',
   ];
   if (resolvedPort !== undefined && resolvedPort !== 22) {
     sshArgs.push('-p', String(resolvedPort));
+  }
+  if (opts.jump_hosts && opts.jump_hosts.length > 0) {
+    sshArgs.push('-J', opts.jump_hosts.join(','));
   }
   sshArgs.push('--', `${resolvedUsername}@${host}`, command);
 
@@ -141,6 +162,7 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
     let rawOutput = '';
     let exitCode: number | null = null;
     let passwordSent = false;
+    let sudoPasswordSent = false;
     let settled = false;
 
     function finish(code: number | null) {
@@ -164,11 +186,39 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
       fail(new Error(`SSH session timed out after ${timeout_ms}ms`));
     }, timeout_ms);
 
+    // Abort signal support for external cancellation (streaming)
+    if (opts.abortSignal) {
+      const onAbort = () => {
+        fail(new Error('SSH session aborted'));
+      };
+      if (opts.abortSignal.aborted) {
+        return fail(new Error('SSH session aborted'));
+      }
+      opts.abortSignal.addEventListener('abort', onAbort, { once: true });
+    }
+
     term.onData((data: string) => {
       rawOutput += data;
 
-      // Handle password prompt
-      if (!passwordSent && detectPasswordPrompt(rawOutput)) {
+      // Handle sudo password prompt (must check before SSH password prompt
+      // because both may match generic password patterns)
+      if (!sudoPasswordSent && detectSudoPrompt(rawOutput)) {
+        sudoPasswordSent = true;
+        if (!sudo_password || sudo_password.length === 0) {
+          fail(new Error(
+            'Sudo password prompt received but no sudo_password_ref was provided.',
+          ));
+          return;
+        }
+        term.write(sudo_password.toString('utf-8') + '\r');
+        return;
+      }
+
+      // Invoke streaming callback (exception-safe)
+      try { opts.onData?.(data); } catch { /* ignore */ }
+
+      // Handle SSH password prompt
+      if (!passwordSent && !sudoPasswordSent && detectPasswordPrompt(rawOutput)) {
         passwordSent = true;
         if (!password || password.length === 0) {
           fail(new Error(
@@ -180,6 +230,15 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
         // Convert Buffer to string only at the moment of write — never store as a string variable.
         // Buffer.fill(0) in the caller is the only real zero-wipe.
         term.write(password.toString('utf-8') + '\r');
+        return;
+      }
+
+      // Detect sudo -n failure (passwordless sudo not available)
+      if (!sudoPasswordSent && isSudoPasswordRequired(rawOutput)) {
+        fail(new Error(
+          'Passwordless sudo (sudo -n) failed: a password is required. ' +
+          'Provide sudo_password_ref with a credential backend and reference to supply the sudo password.',
+        ));
         return;
       }
 

@@ -17,11 +17,24 @@ export interface CredentialMetadata {
   backend: string;
 }
 
+export interface HealthCheckResult {
+  available: boolean;
+  /** Human-readable reason when unavailable — never contains credential material */
+  reason?: string;
+}
+
 export interface CredentialBackend {
   readonly name: string;
 
   /** Check if this backend's prerequisites are met */
   isAvailable(): Promise<boolean>;
+
+  /**
+   * Structured health check with diagnostic reason on failure.
+   * Reason text must never contain credential material — only
+   * infrastructure status (CLI missing, env var unset, auth expired, etc.).
+   */
+  checkHealth(): Promise<HealthCheckResult>;
 
   /** Retrieve credential — password as Buffer, zero-fill after use */
   getCredential(ref: string): Promise<CredentialResult>;

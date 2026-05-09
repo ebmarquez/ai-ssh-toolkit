@@ -45,6 +45,8 @@ export interface SshCheckInput {
    * Set to false to bypass ssh config lookup entirely.
    */
   use_ssh_config?: boolean;
+  /** ProxyJump chain — translated to `ssh -J host1,host2,...`. */
+  jump_hosts?: string[];
 }
 
 export interface SshCheckResult {
@@ -156,6 +158,7 @@ async function authProbe(
   port: number,
   username: string | undefined,
   timeoutMs: number,
+  jumpHosts?: string[],
 ): Promise<SshCheckResult> {
   const sshBin = await resolveSshBin();
   const timeoutSec = Math.max(1, Math.ceil(timeoutMs / 1000));
@@ -167,10 +170,11 @@ async function authProbe(
     '-o', `ConnectTimeout=${timeoutSec}`,
     '-o', 'StrictHostKeyChecking=accept-new',
     '-p', String(port),
-    '--',
-    target,
-    'exit',
   ];
+  if (jumpHosts && jumpHosts.length > 0) {
+    args.push('-J', jumpHosts.join(','));
+  }
+  args.push('--', target, 'exit');
 
   const start = Date.now();
   try {
@@ -220,6 +224,6 @@ export async function sshCheckHost(
     case 'banner':
       return tcpBannerProbe(host, resolvedPort, timeout_ms, true, socketFactory);
     case 'auth':
-      return authProbe(host, resolvedPort, username, timeout_ms);
+      return authProbe(host, resolvedPort, username, timeout_ms, input.jump_hosts);
   }
 }
