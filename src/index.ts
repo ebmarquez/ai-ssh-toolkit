@@ -29,6 +29,12 @@ import { credentialListBackends } from './tools/credential-list.js';
 import { sshCheckHost } from './tools/ssh-check.js';
 import { versionCheck } from './tools/version-check.js';
 import { credentialDiagnose } from './tools/credential-diagnose.js';
+import { sshForwardLocal } from './tools/ssh-forward-local.js';
+import { sshForwardRemote } from './tools/ssh-forward-remote.js';
+import { sshForwardDynamic } from './tools/ssh-forward-dynamic.js';
+import { sshForwardClose } from './tools/ssh-forward-close.js';
+import { sshForwardList } from './tools/ssh-forward-list.js';
+import { destroyAllForwards } from './ssh/forward-manager.js';
 import { CredentialRegistry } from './credentials/registry.js';
 import { CredentialMap } from './credentials/credential-map.js';
 import { BitwardenBackend } from './credentials/bitwarden.js';
@@ -71,11 +77,11 @@ const sessionStore = new SessionStore();
 const credentialMap = new CredentialMap();
 const auditLogger = new AuditLogger();
 
-// Graceful shutdown: destroy all sessions before exiting
-const shutdown = () => { sessionStore.destroy(); process.exit(0); };
+// Graceful shutdown: destroy all sessions and forwards before exiting
+const shutdown = () => { destroyAllForwards(); sessionStore.destroy(); process.exit(0); };
 process.once('SIGINT', shutdown);
 process.once('SIGTERM', shutdown);
-process.on('exit', () => sessionStore.destroy());
+process.on('exit', () => { destroyAllForwards(); sessionStore.destroy(); });
 
 // ── ssh_execute ──────────────────────────────────────────────────────────────
 server.tool(
@@ -396,6 +402,126 @@ server.tool(
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ success: true, path: credentialMap.getFilePath() }) }],
       };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_forward_local ─────────────────────────────────────────────────────────
+server.tool(
+  'ssh_forward_local',
+  'Start a local SSH port forward (-L). Binds a local port and tunnels traffic to a remote host:port through the SSH server. Uses key/agent auth (BatchMode).',
+  {
+    host: z.string().describe('SSH server hostname or IP address'),
+    local_port: z.number().int().min(1).max(65535).describe('Local port to bind'),
+    remote_host: z.string().describe('Remote host to forward traffic to (as seen from SSH server)'),
+    remote_port: z.number().int().min(1).max(65535).describe('Remote port to forward traffic to'),
+    username: z.string().optional().describe('SSH username'),
+    credential_backend: z.string().optional().describe('Credential backend name'),
+    credential_ref: z.string().optional().describe('Credential reference string'),
+    idle_timeout_seconds: z.number().int().positive().optional().describe('Max lifetime in seconds before auto-close (default: 3600)'),
+    use_ssh_config: z.boolean().optional().describe('Honor ~/.ssh/config (default: true)'),
+  },
+  async (input) => {
+    try {
+      const result = await sshForwardLocal(registry, input, credentialMap);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_forward_remote ───────────────────────────────────────────────────────
+server.tool(
+  'ssh_forward_remote',
+  'Start a remote SSH port forward (-R). Binds a port on the SSH server and tunnels traffic back to a local host:port. Uses key/agent auth (BatchMode).',
+  {
+    host: z.string().describe('SSH server hostname or IP address'),
+    remote_port: z.number().int().min(1).max(65535).describe('Remote port to bind on SSH server'),
+    local_host: z.string().describe('Local host to forward traffic to'),
+    local_port: z.number().int().min(1).max(65535).describe('Local port to forward traffic to'),
+    username: z.string().optional().describe('SSH username'),
+    credential_backend: z.string().optional().describe('Credential backend name'),
+    credential_ref: z.string().optional().describe('Credential reference string'),
+    idle_timeout_seconds: z.number().int().positive().optional().describe('Max lifetime in seconds before auto-close (default: 3600)'),
+    use_ssh_config: z.boolean().optional().describe('Honor ~/.ssh/config (default: true)'),
+  },
+  async (input) => {
+    try {
+      const result = await sshForwardRemote(registry, input, credentialMap);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_forward_dynamic ──────────────────────────────────────────────────────
+server.tool(
+  'ssh_forward_dynamic',
+  'Start a dynamic SOCKS proxy SSH forward (-D). Binds a local port as a SOCKS proxy through the SSH server. Uses key/agent auth (BatchMode).',
+  {
+    host: z.string().describe('SSH server hostname or IP address'),
+    local_port: z.number().int().min(1).max(65535).describe('Local port to bind as SOCKS proxy'),
+    username: z.string().optional().describe('SSH username'),
+    credential_backend: z.string().optional().describe('Credential backend name'),
+    credential_ref: z.string().optional().describe('Credential reference string'),
+    idle_timeout_seconds: z.number().int().positive().optional().describe('Max lifetime in seconds before auto-close (default: 3600)'),
+    use_ssh_config: z.boolean().optional().describe('Honor ~/.ssh/config (default: true)'),
+  },
+  async (input) => {
+    try {
+      const result = await sshForwardDynamic(registry, input, credentialMap);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_forward_close ────────────────────────────────────────────────────────
+server.tool(
+  'ssh_forward_close',
+  'Close an active SSH port forward.',
+  {
+    forward_id: z.string().describe('Forward ID returned by ssh_forward_local/remote/dynamic'),
+  },
+  async (input) => {
+    try {
+      const result = sshForwardClose(input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_forward_list ─────────────────────────────────────────────────────────
+server.tool(
+  'ssh_forward_list',
+  'List all active SSH port forwards with their status and configuration.',
+  {},
+  async () => {
+    try {
+      const result = sshForwardList();
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
         content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
