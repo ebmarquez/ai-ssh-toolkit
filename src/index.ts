@@ -34,6 +34,7 @@ import { sshForwardRemote } from './tools/ssh-forward-remote.js';
 import { sshForwardDynamic } from './tools/ssh-forward-dynamic.js';
 import { sshForwardClose } from './tools/ssh-forward-close.js';
 import { sshForwardList } from './tools/ssh-forward-list.js';
+import { sshListHosts } from './tools/ssh-list-hosts.js';
 import { destroyAllForwards } from './ssh/forward-manager.js';
 import { CredentialRegistry } from './credentials/registry.js';
 import { CredentialMap } from './credentials/credential-map.js';
@@ -111,9 +112,11 @@ server.tool(
         username: input.username ?? '',
         credential_backend: input.credential_backend,
         command: input.command,
-        exit_code: result.exit_code,
+        ...(!('dry_run' in result && result.dry_run) && {
+          exit_code: (result as { exit_code: number }).exit_code,
+          stdout_bytes: Buffer.byteLength((result as { output: string }).output, 'utf-8'),
+        }),
         duration_ms: Date.now() - start,
-        stdout_bytes: Buffer.byteLength(result.output, 'utf-8'),
         success: true,
       });
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
@@ -270,7 +273,7 @@ server.tool(
       auditLogger.log({
         tool: 'ssh_session_open',
         host: input.host,
-        username: result.username,
+        username: !('dry_run' in result && result.dry_run) ? (result as { username: string }).username : '',
         credential_backend: input.credential_backend,
         duration_ms: Date.now() - start,
         success: true,
@@ -521,6 +524,26 @@ server.tool(
   async () => {
     try {
       const result = sshForwardList();
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── ssh_list_hosts ───────────────────────────────────────────────────────────
+server.tool(
+  'ssh_list_hosts',
+  'List SSH host aliases from ~/.ssh/config (including Include directives). Returns a sanitized inventory with alias, hostname, user, port, and source file.',
+  {
+    pattern: z.string().optional().describe('Glob pattern to filter host aliases (e.g. "prod-*")'),
+  },
+  async (input) => {
+    try {
+      const result = await sshListHosts(input);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
