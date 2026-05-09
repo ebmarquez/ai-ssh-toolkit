@@ -23,6 +23,7 @@ import { sshSessionOpen } from './tools/ssh-session-open.js';
 import { sshSessionExecute } from './tools/ssh-session-execute.js';
 import { sshSessionClose } from './tools/ssh-session-close.js';
 import { SessionStore } from './ssh/session-store.js';
+import { StreamStore } from './ssh/stream-store.js';
 import { sshMultiExecute } from './tools/ssh-multi-execute.js';
 import { credentialGet } from './tools/credential-get.js';
 import { credentialListBackends } from './tools/credential-list.js';
@@ -39,6 +40,9 @@ import { sshForwardDynamic } from './tools/ssh-forward-dynamic.js';
 import { sshForwardClose } from './tools/ssh-forward-close.js';
 import { sshForwardList } from './tools/ssh-forward-list.js';
 import { destroyAllForwards } from './ssh/forward-manager.js';
+import { sshStreamRead } from './tools/ssh-stream-read.js';
+import { sshStreamCancel } from './tools/ssh-stream-cancel.js';
+import { sshStreamList } from './tools/ssh-stream-list.js';
 import { CredentialRegistry } from './credentials/registry.js';
 import { CredentialMap } from './credentials/credential-map.js';
 import { HostKeyStore } from './security/host-key-store.js';
@@ -90,16 +94,17 @@ registry.register(new MacOsKeychainBackend());
 registry.register(new WindowsCredentialBackend());
 
 const sessionStore = new SessionStore();
+const streamStore = new StreamStore();
 const credentialMap = new CredentialMap();
 const auditLogger = new AuditLogger();
 const hostKeyStore = new HostKeyStore();
 const reuseManager = new SessionReuseManager(getSessionReuseTtl());
 
 // Graceful shutdown: destroy all sessions and forwards before exiting
-const shutdown = () => { destroyAllForwards(); sessionStore.destroy(); process.exit(0); };
+const shutdown = () => { destroyAllForwards(); streamStore.destroyAll(); sessionStore.destroy(); process.exit(0); };
 process.once('SIGINT', shutdown);
 process.once('SIGTERM', shutdown);
-process.on('exit', () => { destroyAllForwards(); sessionStore.destroy(); });
+process.on('exit', () => { destroyAllForwards(); streamStore.destroyAll(); sessionStore.destroy(); });
 
 // ── ssh_execute ──────────────────────────────────────────────────────────────
 server.tool(
@@ -122,11 +127,12 @@ server.tool(
     output_to_file: z.string().optional().describe('If provided, always write full output to this file path (plus return head/tail inline).'),
     jump_hosts: z.array(z.string()).optional().describe('ProxyJump chain: list of bastion/jump hosts, e.g. ["bastion1.example.com","bastion2.internal"]. Translated to ssh -J flag.'),
     reuse_session: z.boolean().optional().describe('When true, reuse an existing SSH ControlMaster connection if available. When false, force a fresh connection. Default follows AI_SSH_SESSION_REUSE_TTL_SECONDS config.'),
+    stream: z.boolean().optional().describe('When true, run asynchronously and return a stream_id for polling output via ssh_stream_read.'),
   },
   async (input) => {
     const start = Date.now();
     try {
-      const result = await sshExecute(registry, input, credentialMap, hostKeyStore, reuseManager);
+      const result = await sshExecute(registry, input, credentialMap, hostKeyStore, reuseManager, streamStore);
       auditLogger.log({
         tool: 'ssh_execute',
         host: input.host,
@@ -327,12 +333,13 @@ server.tool(
     timeout_ms: z.number().int().positive().optional().describe('Command timeout in milliseconds (default: 30000)'),
     max_output_bytes: z.number().int().positive().optional().describe('Maximum output size in bytes before truncation (default: 65536 = 64 KB). Output exceeding this limit is saved to a file and a head/tail preview is returned inline.'),
     output_to_file: z.string().optional().describe('If provided, always write full output to this file path (plus return head/tail inline).'),
+    stream: z.boolean().optional().describe('When true, run asynchronously and return a stream_id for polling output via ssh_stream_read.'),
   },
   async (input) => {
     const start = Date.now();
     const session = sessionStore.get(input.session_id);
     try {
-      const result = await sshSessionExecute(sessionStore, input);
+      const result = await sshSessionExecute(sessionStore, input, streamStore);
       auditLogger.log({
         tool: 'ssh_session_execute',
         host: session?.host ?? '',
@@ -455,6 +462,17 @@ server.tool(
   async (input) => {
     try {
       const result = await sshForwardLocal(registry, input, credentialMap);
+// ── ssh_stream_read ──────────────────────────────────────────────────────────
+server.tool(
+  'ssh_stream_read',
+  'Read output chunks from a streaming SSH command started with stream=true.',
+  {
+    stream_id: z.string().describe('Stream ID returned by ssh_execute or ssh_session_execute with stream=true'),
+    offset: z.number().int().min(0).optional().describe('Chunk offset to read from (default: 0). Use the offset returned by previous reads to get only new chunks.'),
+  },
+  async (input) => {
+    try {
+      const result = sshStreamRead(streamStore, input);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
@@ -483,6 +501,16 @@ server.tool(
   async (input) => {
     try {
       const result = await sshForwardRemote(registry, input, credentialMap);
+// ── ssh_stream_cancel ────────────────────────────────────────────────────────
+server.tool(
+  'ssh_stream_cancel',
+  'Cancel a running streaming SSH command.',
+  {
+    stream_id: z.string().describe('Stream ID of the stream to cancel'),
+  },
+  async (input) => {
+    try {
+      const result = sshStreamCancel(streamStore, input);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {
@@ -547,6 +575,14 @@ server.tool(
   async () => {
     try {
       const result = sshForwardList();
+// ── ssh_stream_list ──────────────────────────────────────────────────────────
+server.tool(
+  'ssh_stream_list',
+  'List all active and recent streaming SSH commands.',
+  {},
+  async () => {
+    try {
+      const result = sshStreamList(streamStore);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       return {

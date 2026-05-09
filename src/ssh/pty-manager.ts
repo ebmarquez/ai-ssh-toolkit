@@ -34,6 +34,10 @@ export interface PtySessionOptions {
   use_ssh_config?: boolean;
   /** Extra SSH CLI args (e.g. ControlMaster options) prepended to the arg list. */
   extraSshArgs?: string[];
+  /** Optional callback invoked on each PTY data event (for streaming). */
+  onData?: (data: string) => void;
+  /** Optional AbortSignal to cancel the session externally. */
+  abortSignal?: AbortSignal;
 }
 
 export interface PtySessionResult {
@@ -173,8 +177,22 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
       fail(new Error(`SSH session timed out after ${timeout_ms}ms`));
     }, timeout_ms);
 
+    // Abort signal support for external cancellation (streaming)
+    if (opts.abortSignal) {
+      const onAbort = () => {
+        fail(new Error('SSH session aborted'));
+      };
+      if (opts.abortSignal.aborted) {
+        return fail(new Error('SSH session aborted'));
+      }
+      opts.abortSignal.addEventListener('abort', onAbort, { once: true });
+    }
+
     term.onData((data: string) => {
       rawOutput += data;
+
+      // Invoke streaming callback (exception-safe)
+      try { opts.onData?.(data); } catch { /* ignore */ }
 
       // Handle password prompt
       if (!passwordSent && detectPasswordPrompt(rawOutput)) {
