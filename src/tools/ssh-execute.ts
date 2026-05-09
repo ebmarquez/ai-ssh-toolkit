@@ -5,6 +5,7 @@
 import type { PlatformHint } from '../ssh/prompt-detector.js';
 import type { CredentialRegistry } from '../credentials/registry.js';
 import { runSshSession } from '../ssh/pty-manager.js';
+import { resolveSshConfig } from '../ssh/ssh-config-reader.js';
 import type { CredentialMap } from '../credentials/credential-map.js';
 
 export interface SshExecuteInput {
@@ -22,6 +23,11 @@ export interface SshExecuteInput {
    * Set to false to bypass ssh config lookup entirely.
    */
   use_ssh_config?: boolean;
+  /**
+   * When true, resolve host/credentials/args but do NOT actually connect.
+   * Returns a structured preview of what would be executed.
+   */
+  dry_run?: boolean;
 }
 
 export interface SshExecuteResult {
@@ -29,11 +35,22 @@ export interface SshExecuteResult {
   exit_code: number | null;
 }
 
+export interface SshExecuteDryRunResult {
+  dry_run: true;
+  resolved_host: string;
+  resolved_user: string;
+  resolved_port: number;
+  credential_backend: string | null;
+  credential_ref: string | null;
+  ssh_command_preview: string[];
+  jump_hosts_resolved: string | null;
+}
+
 export async function sshExecute(
   registry: CredentialRegistry,
   input: SshExecuteInput,
   credentialMap: CredentialMap,
-): Promise<SshExecuteResult> {
+): Promise<SshExecuteResult | SshExecuteDryRunResult> {
   let {
     credential_ref,
     credential_backend,
@@ -44,6 +61,7 @@ export async function sshExecute(
     username,
     platform = 'auto',
     timeout_ms = 30000,
+    dry_run = false,
   } = input;
 
   // Validate required inputs before any lookups
@@ -63,6 +81,63 @@ export async function sshExecute(
 
   // Resolve credentials
   let resolvedUsername = username ?? mappedUsername ?? '';
+
+  if (dry_run) {
+    // Verify backend availability without fetching actual credentials
+    if (credential_ref !== undefined) {
+      if (!credential_ref.trim()) {
+        throw new Error('credential_ref cannot be empty');
+      }
+      const backendName = credential_backend ?? 'google-secret-manager';
+      const backend = registry.getBackend(backendName);
+      const available = await backend.isAvailable();
+      if (!available) {
+        process.stderr.write(`Credential backend "${backendName}" unavailable in ssh_execute\n`);
+        throw new Error(`Credential backend "${backendName}" failed. Check server logs for details.`);
+      }
+    }
+
+    // Resolve SSH config
+    const useSshConfig = input.use_ssh_config ?? true;
+    let resolvedHost = host;
+    let resolvedPort = 22;
+    let jumpHostsResolved: string | null = null;
+
+    if (useSshConfig) {
+      const cfg = await resolveSshConfig(host);
+      if (cfg) {
+        resolvedHost = cfg.hostname;
+        if (!resolvedUsername) resolvedUsername = cfg.user ?? '';
+        if (cfg.port !== 22) resolvedPort = cfg.port;
+        jumpHostsResolved = cfg.proxyJump ?? null;
+      }
+    }
+
+    // Build ssh args preview (mirrors pty-manager.ts)
+    const sshArgs: string[] = [
+      'ssh',
+      '-o', 'StrictHostKeyChecking=accept-new',
+      '-o', 'NumberOfPasswordPrompts=1',
+      '-o', 'ConnectTimeout=10',
+    ];
+    if (resolvedPort !== 22) {
+      sshArgs.push('-p', String(resolvedPort));
+    }
+    sshArgs.push('--', `${resolvedUsername || '<unresolved>'}@${host}`, command);
+
+    return {
+      dry_run: true,
+      resolved_host: resolvedHost,
+      resolved_user: resolvedUsername || '<unresolved>',
+      resolved_port: resolvedPort,
+      credential_backend: credential_backend ?? null,
+      credential_ref: credential_ref ?? null,
+      ssh_command_preview: sshArgs,
+      jump_hosts_resolved: jumpHostsResolved,
+    };
+  }
+
+  // ── Normal (non-dry-run) execution path ──────────────────────────────────
   // node Buffer — use ArrayBufferLike to satisfy TS6 strict generic check
   let passwordBuffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
 

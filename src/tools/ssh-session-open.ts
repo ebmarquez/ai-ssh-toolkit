@@ -29,6 +29,11 @@ export interface SshSessionOpenInput {
    * Set to false to bypass ssh config lookup entirely.
    */
   use_ssh_config?: boolean;
+  /**
+   * When true, resolve host/credentials/args but do NOT actually connect.
+   * Returns a structured preview of what would be executed.
+   */
+  dry_run?: boolean;
 }
 
 export interface SshSessionOpenResult {
@@ -38,12 +43,23 @@ export interface SshSessionOpenResult {
   message: string;
 }
 
+export interface SshSessionOpenDryRunResult {
+  dry_run: true;
+  resolved_host: string;
+  resolved_user: string;
+  resolved_port: number;
+  credential_backend: string | null;
+  credential_ref: string | null;
+  ssh_command_preview: string[];
+  jump_hosts_resolved: string | null;
+}
+
 export async function sshSessionOpen(
   registry: CredentialRegistry,
   sessionStore: SessionStore,
   input: SshSessionOpenInput,
   credentialMap: CredentialMap,
-): Promise<SshSessionOpenResult> {
+): Promise<SshSessionOpenResult | SshSessionOpenDryRunResult> {
   const {
     host,
     username,
@@ -51,6 +67,7 @@ export async function sshSessionOpen(
     timeout_ms = 30_000,
     idle_timeout_ms,
     use_ssh_config = true,
+    dry_run = false,
   } = input;
   let {
     credential_ref,
@@ -72,6 +89,61 @@ export async function sshSessionOpen(
 
   // ── Resolve credentials ──────────────────────────────────────────────────
   let resolvedUsername = username ?? mappedUsername ?? '';
+
+  if (dry_run) {
+    // Verify backend availability without fetching actual credentials
+    if (credential_ref !== undefined) {
+      if (!credential_ref.trim()) throw new Error('credential_ref cannot be empty');
+      const backendName = credential_backend ?? 'google-secret-manager';
+      const backend = registry.getBackend(backendName);
+      const available = await backend.isAvailable();
+      if (!available) {
+        process.stderr.write(`Credential backend "${backendName}" unavailable in ssh_session_open\n`);
+        throw new Error(`Credential backend "${backendName}" failed. Check server logs for details.`);
+      }
+    }
+
+    // SSH config resolution
+    let resolvedHost = host;
+    let resolvedPort = 22;
+    let jumpHostsResolved: string | null = null;
+
+    if (use_ssh_config) {
+      const cfg = await resolveSshConfig(host);
+      if (cfg) {
+        resolvedHost = cfg.hostname;
+        if (!resolvedUsername) resolvedUsername = cfg.user ?? '';
+        if (cfg.port !== 22) resolvedPort = cfg.port;
+        jumpHostsResolved = cfg.proxyJump ?? null;
+      }
+    }
+
+    // Build ssh args preview (mirrors the real spawn path below)
+    const sshArgs: string[] = [
+      'ssh',
+      '-tt',
+      '-o', 'StrictHostKeyChecking=accept-new',
+      '-o', 'NumberOfPasswordPrompts=1',
+      '-o', 'ConnectTimeout=10',
+    ];
+    if (resolvedPort !== 22) {
+      sshArgs.push('-p', String(resolvedPort));
+    }
+    sshArgs.push(`${resolvedUsername || '<unresolved>'}@${host}`);
+
+    return {
+      dry_run: true,
+      resolved_host: resolvedHost,
+      resolved_user: resolvedUsername || '<unresolved>',
+      resolved_port: resolvedPort,
+      credential_backend: credential_backend ?? null,
+      credential_ref: credential_ref ?? null,
+      ssh_command_preview: sshArgs,
+      jump_hosts_resolved: jumpHostsResolved,
+    };
+  }
+
+  // ── Normal (non-dry-run) execution path ──────────────────────────────────
   let passwordBuffer: Buffer = Buffer.alloc(0);
 
   if (credential_ref !== undefined) {
