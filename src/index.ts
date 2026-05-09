@@ -112,9 +112,11 @@ server.tool(
         username: input.username ?? '',
         credential_backend: input.credential_backend,
         command: input.command,
-        exit_code: result.exit_code,
+        ...(!('dry_run' in result && result.dry_run) && {
+          exit_code: (result as { exit_code: number }).exit_code,
+          stdout_bytes: Buffer.byteLength((result as { output: string }).output, 'utf-8'),
+        }),
         duration_ms: Date.now() - start,
-        stdout_bytes: Buffer.byteLength(result.output, 'utf-8'),
         success: true,
       });
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
@@ -271,7 +273,7 @@ server.tool(
       auditLogger.log({
         tool: 'ssh_session_open',
         host: input.host,
-        username: result.username,
+        username: !('dry_run' in result && result.dry_run) ? (result as { username: string }).username : '',
         credential_backend: input.credential_backend,
         duration_ms: Date.now() - start,
         success: true,
