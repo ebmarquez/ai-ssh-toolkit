@@ -35,6 +35,8 @@ export interface SshExecuteInput {
   max_output_bytes?: number;
   /** If provided, always write full output to this file path. */
   output_to_file?: string;
+  /** ProxyJump chain — translated to `ssh -J host1,host2,...`. */
+  jump_hosts?: string[];
 }
 
 export interface SshExecuteResult {
@@ -200,6 +202,7 @@ export async function sshExecute(
       platform,
       timeout_ms,
       use_ssh_config: input.use_ssh_config ?? true,
+      jump_hosts: input.jump_hosts,
     });
 
     // Apply output limiting

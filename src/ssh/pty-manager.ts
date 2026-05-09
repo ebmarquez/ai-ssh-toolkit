@@ -23,6 +23,8 @@ export interface PtySessionOptions {
   timeout_ms?: number;
   /** SSH port override. When omitted, resolved from ~/.ssh/config or defaults to 22. */
   port?: number;
+  /** ProxyJump chain — translated to `ssh -J host1,host2,...`. */
+  jump_hosts?: string[];
   /**
    * When true (default), resolve ~/.ssh/config for the given host alias using
    * `ssh -G <host>` and apply User, Port, IdentityFile, ProxyJump, etc. as
@@ -93,6 +95,9 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
   ];
   if (resolvedPort !== undefined && resolvedPort !== 22) {
     sshArgs.push('-p', String(resolvedPort));
+  }
+  if (opts.jump_hosts && opts.jump_hosts.length > 0) {
+    sshArgs.push('-J', opts.jump_hosts.join(','));
   }
   sshArgs.push('--', `${resolvedUsername}@${host}`, command);
 

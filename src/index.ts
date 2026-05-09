@@ -108,6 +108,7 @@ server.tool(
     dry_run: z.boolean().optional().describe('When true, resolve host/credentials/args but do NOT connect. Returns a preview of the SSH invocation.'),
     max_output_bytes: z.number().int().positive().optional().describe('Maximum output size in bytes before truncation (default: 65536 = 64 KB). Output exceeding this limit is saved to a file and a head/tail preview is returned inline.'),
     output_to_file: z.string().optional().describe('If provided, always write full output to this file path (plus return head/tail inline).'),
+    jump_hosts: z.array(z.string()).optional().describe('ProxyJump chain: list of bastion/jump hosts, e.g. ["bastion1.example.com","bastion2.internal"]. Translated to ssh -J flag.'),
   },
   async (input) => {
     const start = Date.now();
@@ -224,6 +225,7 @@ server.tool(
     timeout_ms: z.number().int().positive().optional().describe('Connection timeout in milliseconds (default: 5000)'),
     mode: z.enum(['tcp', 'banner', 'auth']).optional().describe("Check mode: 'tcp' (TCP connect only), 'banner' (TCP + SSH banner read, default), 'auth' (full ssh binary auth with BatchMode=yes)"),
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
+    jump_hosts: z.array(z.string()).optional().describe('ProxyJump chain: list of bastion/jump hosts. Used in auth mode to route through bastions. Translated to ssh -J flag.'),
   },
   async (input) => {
     const start = Date.now();
@@ -270,6 +272,7 @@ server.tool(
     idle_timeout_ms: z.number().int().positive().optional().describe('Inactivity auto-close timeout in milliseconds (default: 300000)'),
     use_ssh_config: z.boolean().optional().describe('When true (default), honor ~/.ssh/config for User, Port, IdentityFile, ProxyJump, etc. Set false to skip.'),
     dry_run: z.boolean().optional().describe('When true, resolve host/credentials/args but do NOT connect. Returns a preview of the SSH invocation.'),
+    jump_hosts: z.array(z.string()).optional().describe('ProxyJump chain: list of bastion/jump hosts, e.g. ["bastion1.example.com"]. Translated to ssh -J flag.'),
   },
   async (input) => {
     const start = Date.now();
