@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0](https://github.com/ebmarquez/ai-ssh-toolkit/compare/v0.2.3...v0.3.0) (2026-05-09)
+
+
+### Features
+
+* add credential-map file for host→credential resolution ([#110](https://github.com/ebmarquez/ai-ssh-toolkit/issues/110)) ([1b74b85](https://github.com/ebmarquez/ai-ssh-toolkit/commit/1b74b85cd0c7ac2521c82926180b89b100ffbc72))
+* add ssh-agent credential backend (SSH_AUTH_SOCK) ([#109](https://github.com/ebmarquez/ai-ssh-toolkit/issues/109)) ([038eea2](https://github.com/ebmarquez/ai-ssh-toolkit/commit/038eea23bd9a8b18f058e83ba72063d9f8146c60))
+* cleaner env credential ref format with named keys (closes [#87](https://github.com/ebmarquez/ai-ssh-toolkit/issues/87)) ([#118](https://github.com/ebmarquez/ai-ssh-toolkit/issues/118)) ([0369a7b](https://github.com/ebmarquez/ai-ssh-toolkit/commit/0369a7be8060d8aaa8fc75219cd9abda53bd6174))
+* dry_run mode for ssh_execute and ssh_session_open (closes [#88](https://github.com/ebmarquez/ai-ssh-toolkit/issues/88)) ([#119](https://github.com/ebmarquez/ai-ssh-toolkit/issues/119)) ([ea33540](https://github.com/ebmarquez/ai-ssh-toolkit/commit/ea33540bf76d0dcf432621bb170822421788bc5b))
+* honor ~/.ssh/config via ssh -G (issue [#75](https://github.com/ebmarquez/ai-ssh-toolkit/issues/75)) ([#95](https://github.com/ebmarquez/ai-ssh-toolkit/issues/95)) ([6ccffd5](https://github.com/ebmarquez/ai-ssh-toolkit/commit/6ccffd51dd36c56422e7faf3d396f8d79729492e))
+* integrate 9 feature PRs — output limits, cred diagnostics, host key pinning, proxyjump, controlmaster, cred backends, streaming, sudo/enable, SCP/SFTP ([e08afee](https://github.com/ebmarquez/ai-ssh-toolkit/commit/e08afee5d782c0a1f1f850cb38093dabe0a5d9ff))
+* SSH port forwarding -L -R -D (closes [#83](https://github.com/ebmarquez/ai-ssh-toolkit/issues/83)) ([#128](https://github.com/ebmarquez/ai-ssh-toolkit/issues/128)) ([b1b7fb1](https://github.com/ebmarquez/ai-ssh-toolkit/commit/b1b7fb1b331d5dd5268802f1395a7c57ea02c47e))
+* ssh_list_hosts inventory tool with Windows path fix ([#123](https://github.com/ebmarquez/ai-ssh-toolkit/issues/123)) ([b227a02](https://github.com/ebmarquez/ai-ssh-toolkit/commit/b227a0269f03cb074bfab9116f79750a4dfea7be))
+* structured audit log for all SSH operations (closes [#81](https://github.com/ebmarquez/ai-ssh-toolkit/issues/81)) ([#122](https://github.com/ebmarquez/ai-ssh-toolkit/issues/122)) ([0d6919d](https://github.com/ebmarquez/ai-ssh-toolkit/commit/0d6919dd3080e0b233871adcb100e0136b2e249f))
+
+
+### Bug Fixes
+
+* replace BatchMode=yes with TCP+banner probe in ssh_check_host ([#117](https://github.com/ebmarquez/ai-ssh-toolkit/issues/117)) ([b6fba4d](https://github.com/ebmarquez/ai-ssh-toolkit/commit/b6fba4d2abf70bdd08fbb45ef32d063da6d71f7a))
+* skip Azure KV integration tests when OIDC secrets unavailable ([#112](https://github.com/ebmarquez/ai-ssh-toolkit/issues/112)) ([e4e3ebb](https://github.com/ebmarquez/ai-ssh-toolkit/commit/e4e3ebb267f4e185344005b49b1cde4ff433f444))
+
 ## [0.2.0](https://github.com/ebmarquez/ai-ssh-toolkit/compare/v0.1.0...v0.2.0) (2026-04-19)
 
 
