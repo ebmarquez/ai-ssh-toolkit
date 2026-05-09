@@ -12,6 +12,12 @@ import type { HostKeyStore } from '../security/host-key-store.js';
 import { verifyHostKey } from '../security/host-key-verify.js';
 import type { SessionReuseManager } from '../ssh/session-reuse.js';
 import type { StreamStore } from '../ssh/stream-store.js';
+import {
+  type EscalationCredentialRef,
+  fetchEscalationCredential,
+  buildSudoCommand,
+  validateEscalationInputs,
+} from '../ssh/privilege-escalation.js';
 
 export interface SshExecuteInput {
   host: string;
@@ -39,6 +45,7 @@ export interface SshExecuteInput {
   output_to_file?: string;
   /** ProxyJump chain — translated to `ssh -J host1,host2,...`. */
   jump_hosts?: string[];
+  /**
    * When true, reuse an existing SSH ControlMaster connection if available.
    * When false, force a fresh connection. When undefined, follows the
    * AI_SSH_SESSION_REUSE_TTL_SECONDS config (enabled by default).
@@ -46,6 +53,11 @@ export interface SshExecuteInput {
   reuse_session?: boolean;
   /** When true, run the command asynchronously and return a stream_id for polling. */
   stream?: boolean;
+  /** When true, run the command under sudo. Uses sudo -n (non-interactive)
+   *  if no sudo_password_ref is provided. */
+  sudo?: boolean;
+  /** Credential ref for the sudo password (separate from login credential). */
+  sudo_password_ref?: EscalationCredentialRef;
 }
 
 export interface SshExecuteResult {
@@ -79,11 +91,9 @@ export async function sshExecute(
   input: SshExecuteInput,
   credentialMap: CredentialMap,
   hostKeyStore?: HostKeyStore,
-): Promise<SshExecuteResult | SshExecuteDryRunResult> {
   reuseManager?: SessionReuseManager,
-): Promise<SshExecuteResult> {
   streamStore?: StreamStore,
-): Promise<SshExecuteResult | SshExecuteStreamResult> {
+): Promise<SshExecuteResult | SshExecuteDryRunResult | SshExecuteStreamResult> {
   let {
     credential_ref,
     credential_backend,
@@ -97,6 +107,9 @@ export async function sshExecute(
     dry_run = false,
     stream = false,
   } = input;
+
+  // Validate escalation input combinations
+  validateEscalationInputs(input);
 
   // Validate required inputs before any lookups
   if (!host) throw new Error('host is required');
@@ -206,6 +219,20 @@ export async function sshExecute(
   // ssh config resolution first (if use_ssh_config is enabled) and throw with
   // a better error message if username resolution still fails.
 
+  // ── Privilege escalation ─────────────────────────────────────────────────
+  let sudoPasswordBuffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+  let finalCommand = command;
+
+  if (input.sudo) {
+    if (input.sudo_password_ref) {
+      sudoPasswordBuffer = await fetchEscalationCredential(registry, input.sudo_password_ref);
+      finalCommand = buildSudoCommand(command, true);
+    } else {
+      finalCommand = buildSudoCommand(command, false);
+    }
+  }
+
+
   // Host key verification (TOFU)
   if (hostKeyStore) {
     await verifyHostKey(hostKeyStore, host);
@@ -253,11 +280,12 @@ export async function sshExecute(
       host,
       username: resolvedUsername || undefined,
       password: passwordBuffer,
-      command,
+      command: finalCommand,
       platform,
       timeout_ms,
       use_ssh_config: input.use_ssh_config ?? true,
       jump_hosts: input.jump_hosts,
+      sudo_password: sudoPasswordBuffer.length > 0 ? sudoPasswordBuffer : undefined,
     });
 
     // Apply output limiting
@@ -277,7 +305,8 @@ export async function sshExecute(
 
     return result;
   } finally {
-    // Zero-fill password buffer after PTY session completes (success or failure)
+    // Zero-fill password buffers after PTY session completes (success or failure)
     passwordBuffer.fill(0);
+    sudoPasswordBuffer.fill(0);
   }
 }

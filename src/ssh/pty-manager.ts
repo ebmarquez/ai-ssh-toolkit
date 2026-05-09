@@ -10,6 +10,7 @@ import { detectPasswordPrompt, detectPrompt, type PlatformHint } from './prompt-
 import { scrubOutput } from './output-scrubber.js';
 import { SSH_PTY_OPTIONS } from './pty-options.js';
 import { resolveSshConfig } from './ssh-config-reader.js';
+import { detectSudoPrompt, isSudoPasswordRequired } from './privilege-escalation.js';
 
 export interface PtySessionOptions {
   host: string;
@@ -38,6 +39,12 @@ export interface PtySessionOptions {
   onData?: (data: string) => void;
   /** Optional AbortSignal to cancel the session externally. */
   abortSignal?: AbortSignal;
+  /**
+   * Sudo password as Buffer — used when the command is wrapped with `sudo -S`.
+   * Piped to stdin when the custom sudo prompt token is detected.
+   * Zeroed by caller after this function resolves/rejects.
+   */
+  sudo_password?: Buffer;
 }
 
 export interface PtySessionResult {
@@ -66,6 +73,7 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
     timeout_ms = 30000,
     use_ssh_config = true,
     extraSshArgs = [],
+    sudo_password,
   } = opts;
 
   // ── SSH config resolution ─────────────────────────────────────────────────
@@ -154,6 +162,7 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
     let rawOutput = '';
     let exitCode: number | null = null;
     let passwordSent = false;
+    let sudoPasswordSent = false;
     let settled = false;
 
     function finish(code: number | null) {
@@ -191,6 +200,23 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
     term.onData((data: string) => {
       rawOutput += data;
 
+      // Handle sudo password prompt (must check before SSH password prompt
+      // because both may match generic password patterns)
+      if (!sudoPasswordSent && detectSudoPrompt(rawOutput)) {
+        sudoPasswordSent = true;
+        if (!sudo_password || sudo_password.length === 0) {
+          fail(new Error(
+            'Sudo password prompt received but no sudo_password_ref was provided.',
+          ));
+          return;
+        }
+        term.write(sudo_password.toString('utf-8') + '\r');
+        return;
+      }
+
+      // Handle SSH password prompt
+      if (!passwordSent && !sudoPasswordSent && detectPasswordPrompt(rawOutput)) {
+
       // Invoke streaming callback (exception-safe)
       try { opts.onData?.(data); } catch { /* ignore */ }
 
@@ -207,6 +233,15 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
         // Convert Buffer to string only at the moment of write — never store as a string variable.
         // Buffer.fill(0) in the caller is the only real zero-wipe.
         term.write(password.toString('utf-8') + '\r');
+        return;
+      }
+
+      // Detect sudo -n failure (passwordless sudo not available)
+      if (!sudoPasswordSent && isSudoPasswordRequired(rawOutput)) {
+        fail(new Error(
+          'Passwordless sudo (sudo -n) failed: a password is required. ' +
+          'Provide sudo_password_ref with a credential backend and reference to supply the sudo password.',
+        ));
         return;
       }
 

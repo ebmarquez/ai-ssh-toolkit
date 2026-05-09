@@ -6,11 +6,21 @@
  */
 
 import type { SessionStore, ManagedSession } from '../ssh/session-store.js';
+import type { CredentialRegistry } from '../credentials/registry.js';
 import type { IDisposable } from 'node-pty';
 import { detectPrompt } from '../ssh/prompt-detector.js';
 import { scrubOutput } from '../ssh/output-scrubber.js';
 import { applyOutputLimit } from '../utils/output-limiter.js';
 import type { StreamStore } from '../ssh/stream-store.js';
+import {
+  type EscalationCredentialRef,
+  fetchEscalationCredential,
+  buildSudoCommand,
+  detectSudoPrompt,
+  detectEnablePrompt,
+  isSudoPasswordRequired,
+  validateEscalationInputs,
+} from '../ssh/privilege-escalation.js';
 
 export interface SshSessionExecuteInput {
   session_id: string;
@@ -22,6 +32,12 @@ export interface SshSessionExecuteInput {
   output_to_file?: string;
   /** When true, run asynchronously and return a stream_id for polling. */
   stream?: boolean;
+  /** When true, run the command under sudo. */
+  sudo?: boolean;
+  /** Credential ref for the sudo password. */
+  sudo_password_ref?: EscalationCredentialRef;
+  /** Credential ref for Cisco IOS enable mode password. */
+  enable_password_ref?: EscalationCredentialRef;
 }
 
 export interface SshSessionExecuteResult {
@@ -47,6 +63,12 @@ export async function sshSessionExecute(
   streamStore?: StreamStore,
 ): Promise<SshSessionExecuteResult | SshSessionExecuteStreamResult> {
   const { session_id, command, timeout_ms = 30_000, stream = false } = input;
+  registry?: CredentialRegistry,
+): Promise<SshSessionExecuteResult> {
+  const { session_id, command, timeout_ms = 30_000 } = input;
+
+  // Validate escalation input combinations
+  validateEscalationInputs(input);
 
   if (!session_id?.trim()) {
     throw new Error('session_id is required and cannot be empty');
@@ -65,12 +87,37 @@ export async function sshSessionExecute(
     throw new Error('A command is already running on this session. Wait for it to complete.');
   }
 
+  // ── Privilege escalation setup ─────────────────────────────────────────
+  let sudoPasswordBuffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+  let enablePasswordBuffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+  let finalCommand = command;
+
+  if (input.sudo) {
+    if (input.sudo_password_ref) {
+      if (!registry) {
+        throw new Error('CredentialRegistry is required for sudo_password_ref');
+      }
+      sudoPasswordBuffer = await fetchEscalationCredential(registry, input.sudo_password_ref);
+      finalCommand = buildSudoCommand(command, true);
+    } else {
+      finalCommand = buildSudoCommand(command, false);
+    }
+  }
+
+  if (input.enable_password_ref) {
+    if (!registry) {
+      throw new Error('CredentialRegistry is required for enable_password_ref');
+    }
+    enablePasswordBuffer = await fetchEscalationCredential(registry, input.enable_password_ref);
+  }
+
   // Update activity timestamp
   session.lastActivity = Date.now();
   session.outputBuffer = ''; // reset capture buffer for this command
   session.inFlight = true;
 
   const sess = session; // capture for closure — TypeScript narrowing guard
+  const hasEnable = enablePasswordBuffer.length > 0;
 
   // Streaming path: return immediately, feed chunks to StreamStore
   if (stream && streamStore) {
@@ -164,10 +211,16 @@ export async function sshSessionExecute(
     let captureBuffer = '';
     let settled = false;
     let dataDisposable: IDisposable | undefined;
+    let sudoPasswordSent = false;
+    let enablePasswordSent = false;
+    let enableCommandSent = !hasEnable; // skip enable phase if not needed
 
     let exitDisposable: IDisposable | undefined;
 
     function cleanup() {
+      // Zero escalation buffers
+      sudoPasswordBuffer.fill(0);
+      enablePasswordBuffer.fill(0);
       if (dataDisposable) {
         try { dataDisposable.dispose(); } catch { /* ignore */ }
         const idx = sess.disposables.indexOf(dataDisposable);
@@ -211,7 +264,60 @@ export async function sshSessionExecute(
       sess.outputBuffer += data;
       sess.lastActivity = Date.now();
 
-      if (detectPrompt(captureBuffer, sess.platform)) {
+      // ── Enable mode: wait for password prompt after sending 'enable' ──
+      if (hasEnable && !enablePasswordSent && detectEnablePrompt(captureBuffer)) {
+        enablePasswordSent = true;
+        try {
+          sess.ptyProcess.write(enablePasswordBuffer.toString('utf-8') + '\r');
+        } catch (err) {
+          sessionStore.delete(sess.id);
+          fail(new Error(`Failed to write enable password to PTY: ${String(err)}`));
+        }
+        // Reset capture to collect output after enable auth
+        captureBuffer = '';
+        return;
+      }
+
+      // ── Enable mode: after password sent, wait for prompt then send command ──
+      if (hasEnable && enablePasswordSent && !enableCommandSent && detectPrompt(captureBuffer, sess.platform)) {
+        enableCommandSent = true;
+        captureBuffer = ''; // reset to capture only command output
+        try {
+          sess.ptyProcess.write(finalCommand + '\r');
+        } catch (err) {
+          sessionStore.delete(sess.id);
+          fail(new Error(`Failed to write command to PTY: ${String(err)}`));
+        }
+        return;
+      }
+
+      // ── Sudo password prompt ──────────────────────────────────────────
+      if (input.sudo && !sudoPasswordSent && detectSudoPrompt(captureBuffer)) {
+        sudoPasswordSent = true;
+        if (sudoPasswordBuffer.length === 0) {
+          fail(new Error('Sudo password prompt received but no sudo_password_ref was provided.'));
+          return;
+        }
+        try {
+          sess.ptyProcess.write(sudoPasswordBuffer.toString('utf-8') + '\r');
+        } catch (err) {
+          sessionStore.delete(sess.id);
+          fail(new Error(`Failed to write sudo password to PTY: ${String(err)}`));
+        }
+        return;
+      }
+
+      // ── Detect sudo -n failure ────────────────────────────────────────
+      if (input.sudo && !sudoPasswordSent && isSudoPasswordRequired(captureBuffer)) {
+        fail(new Error(
+          'Passwordless sudo (sudo -n) failed: a password is required. ' +
+          'Provide sudo_password_ref with a credential backend and reference to supply the sudo password.',
+        ));
+        return;
+      }
+
+      // ── Normal prompt detection (command finished) ────────────────────
+      if (enableCommandSent && detectPrompt(captureBuffer, sess.platform)) {
         finish(captureBuffer);
       }
     });
@@ -226,10 +332,13 @@ export async function sshSessionExecute(
     });
     sess.disposables.push(exitDisposable);
 
-    // Write the command to the PTY — wrap in try/catch so a dead PTY
-    // doesn't leave inFlight=true and listeners dangling
+    // Write the initial command to the PTY — for enable mode, send 'enable' first
     try {
-      sess.ptyProcess.write(command + '\r');
+      if (hasEnable) {
+        sess.ptyProcess.write('enable\r');
+      } else {
+        sess.ptyProcess.write(finalCommand + '\r');
+      }
     } catch (err) {
       // PTY is dead — remove the session from the store and fail cleanly
       sessionStore.delete(sess.id);

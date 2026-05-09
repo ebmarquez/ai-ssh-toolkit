@@ -128,6 +128,11 @@ server.tool(
     jump_hosts: z.array(z.string()).optional().describe('ProxyJump chain: list of bastion/jump hosts, e.g. ["bastion1.example.com","bastion2.internal"]. Translated to ssh -J flag.'),
     reuse_session: z.boolean().optional().describe('When true, reuse an existing SSH ControlMaster connection if available. When false, force a fresh connection. Default follows AI_SSH_SESSION_REUSE_TTL_SECONDS config.'),
     stream: z.boolean().optional().describe('When true, run asynchronously and return a stream_id for polling output via ssh_stream_read.'),
+    sudo: z.boolean().optional().describe('When true, run the command under sudo. Uses sudo -n (non-interactive) if no sudo_password_ref is provided.'),
+    sudo_password_ref: z.object({
+      backend: z.string().describe('Credential backend name'),
+      ref: z.string().describe('Credential reference string'),
+    }).optional().describe('Credential reference for the sudo password (separate from login credential)'),
   },
   async (input) => {
     const start = Date.now();
@@ -334,12 +339,21 @@ server.tool(
     max_output_bytes: z.number().int().positive().optional().describe('Maximum output size in bytes before truncation (default: 65536 = 64 KB). Output exceeding this limit is saved to a file and a head/tail preview is returned inline.'),
     output_to_file: z.string().optional().describe('If provided, always write full output to this file path (plus return head/tail inline).'),
     stream: z.boolean().optional().describe('When true, run asynchronously and return a stream_id for polling output via ssh_stream_read.'),
+    sudo: z.boolean().optional().describe('When true, run the command under sudo. Uses sudo -n (non-interactive) if no sudo_password_ref is provided.'),
+    sudo_password_ref: z.object({
+      backend: z.string().describe('Credential backend name'),
+      ref: z.string().describe('Credential reference string'),
+    }).optional().describe('Credential reference for the sudo password'),
+    enable_password_ref: z.object({
+      backend: z.string().describe('Credential backend name'),
+      ref: z.string().describe('Credential reference string'),
+    }).optional().describe('Credential reference for Cisco IOS enable mode password'),
   },
   async (input) => {
     const start = Date.now();
     const session = sessionStore.get(input.session_id);
     try {
-      const result = await sshSessionExecute(sessionStore, input, streamStore);
+      const result = await sshSessionExecute(sessionStore, input, streamStore, registry);
       auditLogger.log({
         tool: 'ssh_session_execute',
         host: session?.host ?? '',
@@ -628,6 +642,15 @@ server.tool(
       }
       const records = auditLogger.readLastRecords(input.limit ?? 50);
       return { content: [{ type: 'text' as const, text: JSON.stringify(records, null, 2) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
 // ── ssh_host_info ────────────────────────────────────────────────────────────
 server.tool(
   'ssh_host_info',
