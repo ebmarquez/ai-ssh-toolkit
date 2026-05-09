@@ -214,14 +214,11 @@ export async function runSshSession(opts: PtySessionOptions): Promise<PtySession
         return;
       }
 
-      // Handle SSH password prompt
-      if (!passwordSent && !sudoPasswordSent && detectPasswordPrompt(rawOutput)) {
-
       // Invoke streaming callback (exception-safe)
       try { opts.onData?.(data); } catch { /* ignore */ }
 
-      // Handle password prompt
-      if (!passwordSent && detectPasswordPrompt(rawOutput)) {
+      // Handle SSH password prompt
+      if (!passwordSent && !sudoPasswordSent && detectPasswordPrompt(rawOutput)) {
         passwordSent = true;
         if (!password || password.length === 0) {
           fail(new Error(

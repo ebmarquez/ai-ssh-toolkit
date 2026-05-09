@@ -425,7 +425,7 @@ describe('sshSessionExecute with sudo', () => {
       timeout_ms: 5000,
       sudo: true,
       sudo_password_ref: { backend: 'test-backend', ref: 'sudo-ref' },
-    }, registry);
+    }, undefined, registry);
 
     await new Promise(r => setTimeout(r, 10));
 
@@ -509,7 +509,7 @@ describe('sshSessionExecute with enable mode', () => {
       command: 'show running-config',
       timeout_ms: 5000,
       enable_password_ref: { backend: 'test-backend', ref: 'enable-ref' },
-    }, registry);
+    }, undefined, registry);
 
     await new Promise(r => setTimeout(r, 10));
 

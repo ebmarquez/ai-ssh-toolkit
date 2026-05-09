@@ -61,11 +61,9 @@ export async function sshSessionExecute(
   sessionStore: SessionStore,
   input: SshSessionExecuteInput,
   streamStore?: StreamStore,
+  registry?: CredentialRegistry,
 ): Promise<SshSessionExecuteResult | SshSessionExecuteStreamResult> {
   const { session_id, command, timeout_ms = 30_000, stream = false } = input;
-  registry?: CredentialRegistry,
-): Promise<SshSessionExecuteResult> {
-  const { session_id, command, timeout_ms = 30_000 } = input;
 
   // Validate escalation input combinations
   validateEscalationInputs(input);
@@ -206,8 +204,8 @@ export async function sshSessionExecute(
     return { stream_id: streamId, session_id, status: 'running' as const };
   }
 
-  // Non-streaming path (unchanged)
-  return new Promise<SshSessionExecuteResult>((resolve, reject) => {
+  // Non-streaming path
+  const base = await new Promise<SshSessionExecuteResult>((resolve, reject) => {
     let captureBuffer = '';
     let settled = false;
     let dataDisposable: IDisposable | undefined;

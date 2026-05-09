@@ -102,10 +102,10 @@ const hostKeyStore = new HostKeyStore();
 const reuseManager = new SessionReuseManager(getSessionReuseTtl());
 
 // Graceful shutdown: destroy all sessions and forwards before exiting
-const shutdown = () => { destroyAllForwards(); streamStore.destroyAll(); sessionStore.destroy(); process.exit(0); };
+const shutdown = () => { destroyAllForwards(); streamStore.destroy(); sessionStore.destroy(); process.exit(0); };
 process.once('SIGINT', shutdown);
 process.once('SIGTERM', shutdown);
-process.on('exit', () => { destroyAllForwards(); streamStore.destroyAll(); sessionStore.destroy(); });
+process.on('exit', () => { destroyAllForwards(); streamStore.destroy(); sessionStore.destroy(); });
 
 // ── ssh_execute ──────────────────────────────────────────────────────────────
 server.tool(
@@ -139,17 +139,19 @@ server.tool(
     const start = Date.now();
     try {
       const result = await sshExecute(registry, input, credentialMap, hostKeyStore, reuseManager, streamStore);
-      auditLogger.log({
-        tool: 'ssh_execute',
-        host: input.host,
-        username: input.username ?? '',
-        credential_backend: input.credential_backend,
-        command: input.command,
-        exit_code: result.exit_code,
-        duration_ms: Date.now() - start,
-        stdout_bytes: Buffer.byteLength(result.output, 'utf-8'),
-        success: true,
-      });
+      if ('output' in result && 'exit_code' in result) {
+        auditLogger.log({
+          tool: 'ssh_execute',
+          host: input.host,
+          username: input.username ?? '',
+          credential_backend: input.credential_backend,
+          command: input.command,
+          exit_code: result.exit_code,
+          duration_ms: Date.now() - start,
+          stdout_bytes: Buffer.byteLength(result.output, 'utf-8'),
+          success: true,
+        });
+      }
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       auditLogger.log({
@@ -303,14 +305,16 @@ server.tool(
     const start = Date.now();
     try {
       const result = await sshSessionOpen(registry, sessionStore, input, credentialMap, hostKeyStore);
-      auditLogger.log({
-        tool: 'ssh_session_open',
-        host: input.host,
-        username: result.username,
-        credential_backend: input.credential_backend,
-        duration_ms: Date.now() - start,
-        success: true,
-      });
+      if ('username' in result) {
+        auditLogger.log({
+          tool: 'ssh_session_open',
+          host: input.host,
+          username: result.username,
+          credential_backend: input.credential_backend,
+          duration_ms: Date.now() - start,
+          success: true,
+        });
+      }
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       auditLogger.log({
@@ -355,16 +359,18 @@ server.tool(
     const session = sessionStore.get(input.session_id);
     try {
       const result = await sshSessionExecute(sessionStore, input, streamStore, registry);
-      auditLogger.log({
-        tool: 'ssh_session_execute',
-        host: session?.host ?? '',
-        username: session?.username ?? '',
-        command: input.command,
-        exit_code: result.exit_code,
-        duration_ms: Date.now() - start,
-        stdout_bytes: Buffer.byteLength(result.output, 'utf-8'),
-        success: true,
-      });
+      if ('output' in result && 'exit_code' in result) {
+        auditLogger.log({
+          tool: 'ssh_session_execute',
+          host: session?.host ?? '',
+          username: session?.username ?? '',
+          command: input.command,
+          exit_code: result.exit_code,
+          duration_ms: Date.now() - start,
+          stdout_bytes: Buffer.byteLength(result.output, 'utf-8'),
+          success: true,
+        });
+      }
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     } catch (err: unknown) {
       auditLogger.log({
@@ -477,6 +483,16 @@ server.tool(
   async (input) => {
     try {
       const result = await sshForwardLocal(registry, input, credentialMap);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
 // ── ssh_stream_read ──────────────────────────────────────────────────────────
 server.tool(
   'ssh_stream_read',
@@ -488,6 +504,16 @@ server.tool(
   async (input) => {
     try {
       const result = sshStreamRead(streamStore, input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
 // ── ssh_upload ────────────────────────────────────────────────────────────────
 server.tool(
   'ssh_upload',
@@ -533,6 +559,16 @@ server.tool(
   async (input) => {
     try {
       const result = await sshForwardRemote(registry, input, credentialMap);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
 // ── ssh_stream_cancel ────────────────────────────────────────────────────────
 server.tool(
   'ssh_stream_cancel',
@@ -543,6 +579,16 @@ server.tool(
   async (input) => {
     try {
       const result = sshStreamCancel(streamStore, input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
 // ── ssh_download ─────────────────────────────────────────────────────────────
 server.tool(
   'ssh_download',
@@ -624,6 +670,16 @@ server.tool(
   async () => {
     try {
       const result = sshForwardList();
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
 // ── ssh_stream_list ──────────────────────────────────────────────────────────
 server.tool(
   'ssh_stream_list',
@@ -632,6 +688,16 @@ server.tool(
   async () => {
     try {
       const result = sshStreamList(streamStore);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+    } catch (err: unknown) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
 // ── ssh_sftp_list ────────────────────────────────────────────────────────────
 server.tool(
   'ssh_sftp_list',

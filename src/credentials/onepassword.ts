@@ -3,6 +3,7 @@ import {
   CredentialBackend,
   CredentialResult,
   CredentialMetadata,
+  HealthCheckResult,
 } from "./backend.js";
 import { resolveCliPath } from "../utils/cli-resolver.js";
 
@@ -43,6 +44,13 @@ export class OnePasswordBackend implements CredentialBackend {
     } catch {
       return false;
     }
+  }
+
+  async checkHealth(): Promise<HealthCheckResult> {
+    const available = await this.isAvailable();
+    return available
+      ? { available: true }
+      : { available: false, reason: `${this.name} backend is not available` };
   }
 
   async getCredential(ref: string): Promise<CredentialResult> {

@@ -286,15 +286,6 @@ export async function sshExecute(
       use_ssh_config: input.use_ssh_config ?? true,
       jump_hosts: input.jump_hosts,
       sudo_password: sudoPasswordBuffer.length > 0 ? sudoPasswordBuffer : undefined,
-    });
-
-    // Apply output limiting
-    const limited = await applyOutputLimit(result.output, {
-      max_output_bytes: input.max_output_bytes,
-      output_to_file: input.output_to_file,
-    });
-
-    return { ...result, ...limited };
       extraSshArgs,
     });
 
@@ -303,7 +294,13 @@ export async function sshExecute(
       reuseManager.recordActivity(host, resolvedUsername);
     }
 
-    return result;
+    // Apply output limiting
+    const limited = await applyOutputLimit(result.output, {
+      max_output_bytes: input.max_output_bytes,
+      output_to_file: input.output_to_file,
+    });
+
+    return { ...result, ...limited };
   } finally {
     // Zero-fill password buffers after PTY session completes (success or failure)
     passwordBuffer.fill(0);

@@ -194,7 +194,7 @@ describe('sshExecute with session reuse', () => {
       username: 'testuser',
       platform: 'linux',
       timeout_ms: 5000,
-    }, credentialMap, mgr);
+    }, credentialMap, undefined, mgr);
 
     await new Promise(r => setTimeout(r, 20));
     fakeOnData!('testuser@test-host:~$ ');
@@ -221,7 +221,7 @@ describe('sshExecute with session reuse', () => {
       username: 'testuser',
       platform: 'linux',
       timeout_ms: 5000,
-    }, credentialMap, mgr);
+    }, credentialMap, undefined, mgr);
 
     await new Promise(r => setTimeout(r, 20));
     fakeOnData!('testuser@test-host:~$ ');
@@ -244,7 +244,7 @@ describe('sshExecute with session reuse', () => {
       platform: 'linux',
       timeout_ms: 5000,
       reuse_session: false,
-    }, credentialMap, mgr);
+    }, credentialMap, undefined, mgr);
 
     await new Promise(r => setTimeout(r, 20));
     fakeOnData!('testuser@test-host:~$ ');
@@ -267,7 +267,7 @@ describe('sshExecute with session reuse', () => {
       platform: 'linux',
       timeout_ms: 5000,
       reuse_session: true,
-    }, credentialMap, mgr);
+    }, credentialMap, undefined, mgr);
 
     await new Promise(r => setTimeout(r, 20));
     fakeOnData!('testuser@test-host:~$ ');
@@ -310,7 +310,7 @@ describe('sshExecute with session reuse', () => {
       username: 'testuser',
       platform: 'linux',
       timeout_ms: 5000,
-    }, credentialMap, mgr);
+    }, credentialMap, undefined, mgr);
 
     await new Promise(r => setTimeout(r, 20));
     fakeOnData!('testuser@test-host:~$ ');
@@ -332,7 +332,7 @@ describe('sshExecute with session reuse', () => {
       username: 'testuser',
       platform: 'linux',
       timeout_ms: 5000,
-    }, credentialMap, mgr);
+    }, credentialMap, undefined, mgr);
 
     await new Promise(r => setTimeout(r, 20));
     fakeOnData!('hello\r\ntestuser@test-host:~$ ');
