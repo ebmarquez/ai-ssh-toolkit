@@ -48,6 +48,7 @@ import { EnvCredentialBackend } from './credentials/env.js';
 import { GoogleSecretManagerBackend } from './credentials/google-secret-manager.js';
 import { SshAgentBackend } from './credentials/ssh-agent.js';
 import { AuditLogger } from './audit/audit-logger.js';
+import { SessionReuseManager, getSessionReuseTtl } from './ssh/session-reuse.js';
 import { readFileSync } from 'fs';
 
 function getPackageVersion(): string {
@@ -82,6 +83,7 @@ const sessionStore = new SessionStore();
 const credentialMap = new CredentialMap();
 const auditLogger = new AuditLogger();
 const hostKeyStore = new HostKeyStore();
+const reuseManager = new SessionReuseManager(getSessionReuseTtl());
 
 // Graceful shutdown: destroy all sessions and forwards before exiting
 const shutdown = () => { destroyAllForwards(); sessionStore.destroy(); process.exit(0); };
@@ -109,11 +111,12 @@ server.tool(
     max_output_bytes: z.number().int().positive().optional().describe('Maximum output size in bytes before truncation (default: 65536 = 64 KB). Output exceeding this limit is saved to a file and a head/tail preview is returned inline.'),
     output_to_file: z.string().optional().describe('If provided, always write full output to this file path (plus return head/tail inline).'),
     jump_hosts: z.array(z.string()).optional().describe('ProxyJump chain: list of bastion/jump hosts, e.g. ["bastion1.example.com","bastion2.internal"]. Translated to ssh -J flag.'),
+    reuse_session: z.boolean().optional().describe('When true, reuse an existing SSH ControlMaster connection if available. When false, force a fresh connection. Default follows AI_SSH_SESSION_REUSE_TTL_SECONDS config.'),
   },
   async (input) => {
     const start = Date.now();
     try {
-      const result = await sshExecute(registry, input, credentialMap, hostKeyStore);
+      const result = await sshExecute(registry, input, credentialMap, hostKeyStore, reuseManager);
       auditLogger.log({
         tool: 'ssh_execute',
         host: input.host,

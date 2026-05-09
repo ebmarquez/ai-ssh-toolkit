@@ -10,6 +10,7 @@ import type { CredentialMap } from '../credentials/credential-map.js';
 import { applyOutputLimit } from '../utils/output-limiter.js';
 import type { HostKeyStore } from '../security/host-key-store.js';
 import { verifyHostKey } from '../security/host-key-verify.js';
+import type { SessionReuseManager } from '../ssh/session-reuse.js';
 
 export interface SshExecuteInput {
   host: string;
@@ -37,6 +38,11 @@ export interface SshExecuteInput {
   output_to_file?: string;
   /** ProxyJump chain — translated to `ssh -J host1,host2,...`. */
   jump_hosts?: string[];
+   * When true, reuse an existing SSH ControlMaster connection if available.
+   * When false, force a fresh connection. When undefined, follows the
+   * AI_SSH_SESSION_REUSE_TTL_SECONDS config (enabled by default).
+   */
+  reuse_session?: boolean;
 }
 
 export interface SshExecuteResult {
@@ -66,6 +72,8 @@ export async function sshExecute(
   credentialMap: CredentialMap,
   hostKeyStore?: HostKeyStore,
 ): Promise<SshExecuteResult | SshExecuteDryRunResult> {
+  reuseManager?: SessionReuseManager,
+): Promise<SshExecuteResult> {
   let {
     credential_ref,
     credential_backend,
@@ -192,6 +200,12 @@ export async function sshExecute(
     await verifyHostKey(hostKeyStore, host);
   }
 
+  // Determine whether to use session reuse (ControlMaster)
+  const useReuse = input.reuse_session ?? (reuseManager?.isEnabled() ?? false);
+  const extraSshArgs = (useReuse && reuseManager)
+    ? reuseManager.getControlMasterArgs()
+    : [];
+
   // Run the PTY session
   try {
     const result = await runSshSession({
@@ -212,6 +226,15 @@ export async function sshExecute(
     });
 
     return { ...result, ...limited };
+      extraSshArgs,
+    });
+
+    // Record successful connection for future reuse
+    if (useReuse && reuseManager && resolvedUsername) {
+      reuseManager.recordActivity(host, resolvedUsername);
+    }
+
+    return result;
   } finally {
     // Zero-fill password buffer after PTY session completes (success or failure)
     passwordBuffer.fill(0);
