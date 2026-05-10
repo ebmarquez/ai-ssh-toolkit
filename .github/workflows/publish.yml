@@ -3,6 +3,8 @@ name: Publish
 on:
   release:
     types: [created]
+  workflow_call:  # Allow release-please.yml to call this directly
+  workflow_dispatch:  # Allow manual runs for re-publishing a release
 
 jobs:
   publish-npm:
